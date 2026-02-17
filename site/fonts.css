@@ -1,0 +1,10 @@
+/* System Font Stack - Modern Tech Typography
+   No custom fonts needed - uses native OS fonts for best performance */
+
+:root {
+    /* Primary system font stack - optimized for each platform */
+    --font-system: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    
+    /* Monospace font stack for code/technical content */
+    --font-mono: 'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, 'Liberation Mono', Menlo, Monaco, monospace;
+}

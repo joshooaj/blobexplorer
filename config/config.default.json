@@ -1,0 +1,8 @@
+{
+  "$schema": "./config.schema.json",
+  "siteTitle": "Blob Explorer",
+  "siteDescription": "Browse and download files from Azure Blob Storage",
+  "logoUrl": "",
+  "logoFile": "",
+  "favorites": []
+}

@@ -1,0 +1,75 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Blob Explorer Configuration",
+  "description": "Configuration file for Blob Explorer",
+  "type": "object",
+  "properties": {
+    "siteTitle": {
+      "type": "string",
+      "description": "The title displayed in the browser tab and header",
+      "default": "Blob Explorer"
+    },
+    "siteDescription": {
+      "type": "string",
+      "description": "Meta description for the site",
+      "default": "Browse and download files from Azure Blob Storage"
+    },
+    "logoUrl": {
+      "type": "string",
+      "description": "URL to a custom logo image (leave empty for default)",
+      "default": ""
+    },
+    "logoFile": {
+      "type": "string",
+      "description": "Path to a custom logo image file, relative to the config folder (e.g., 'my-logo.svg'). Takes precedence over logoUrl.",
+      "default": ""
+    },
+    "analyticsScript": {
+      "type": "string",
+      "description": "Path to a custom analytics JavaScript file, relative to the /config folder (e.g., 'analytics.js'). The file contents will be injected into the page.",
+      "default": ""
+    },
+    "favorites": {
+      "type": "array",
+      "description": "List of favorites to display in the sidebar",
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "Display name for this favorite"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["folder", "search", "pattern"],
+            "description": "Type of favorite: folder (navigate to path), search (run a search), or pattern (auto-match folders)"
+          },
+          "path": {
+            "type": "string",
+            "description": "For 'folder' type: the folder path to navigate to"
+          },
+          "query": {
+            "type": "string",
+            "description": "For 'search' type: the search query to run"
+          },
+          "pattern": {
+            "type": "string",
+            "description": "For 'pattern' type: regex pattern to match top-level folders"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "For 'pattern' type: maximum number of matches to show",
+            "default": 3
+          },
+          "sortOrder": {
+            "type": "string",
+            "enum": ["asc", "desc"],
+            "description": "For 'pattern' type: sort order for matched folders",
+            "default": "desc"
+          }
+        },
+        "required": ["label", "type"]
+      }
+    }
+  }
+}

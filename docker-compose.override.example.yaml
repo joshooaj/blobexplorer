@@ -1,0 +1,19 @@
+# Add / override the docker-compose.yaml file here and it will be safe to
+# clone the repo and pull without overwriting your changes or having to rebase
+
+networks:
+  web:
+    external: true
+
+services:
+  blob-explorer:
+    environment:
+      - BASE_URL=https://your-storage.blob.core.windows.net/your-container
+      - LOGO_FILE=customlogo.svg
+    networks:
+      - web
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.blob-explorer.entrypoints=https"
+      - "traefik.http.routers.blob-explorer.rule=Host(`downloads.example.com`)"
+      - "traefik.http.services.blob-explorer.loadbalancer.server.port=8080"

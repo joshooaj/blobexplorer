@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 205 40" width="205" height="40">
+  <defs>
+    <!-- Main gradient for blob -->
+    <linearGradient id="blobGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00c4ff"/>
+      <stop offset="50%" style="stop-color:#0099DA"/>
+      <stop offset="100%" style="stop-color:#0077b3"/>
+    </linearGradient>
+    
+    <!-- Glow effect -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="1" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    
+    <!-- Inner shadow for depth -->
+    <linearGradient id="blobHighlight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:0.4"/>
+      <stop offset="100%" style="stop-color:#ffffff;stop-opacity:0"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Blob Icon with Explorer/Search Element -->
+  <g transform="translate(20, 20)">
+    <!-- Main organic blob shape -->
+    <path d="M-12,-14 C-6,-18 6,-16 12,-12 C17,-7 16,4 12,10 C7,16 -4,17 -11,12 C-17,6 -17,-9 -12,-14 Z" 
+          fill="url(#blobGradient)" 
+          filter="url(#glow)"/>
+    
+    <!-- Highlight reflection on blob -->
+    <ellipse cx="-4" cy="-7" rx="5" ry="3" 
+             fill="url(#blobHighlight)" 
+             transform="rotate(-25 -4 -7)"/>
+    
+    <!-- Magnifying glass / Explorer element -->
+    <g transform="translate(2, 2)">
+      <!-- Glass circle -->
+      <circle cx="0" cy="0" r="6" 
+              fill="none" 
+              stroke="#ffffff" 
+              stroke-width="2.5"
+              stroke-linecap="round"/>
+      
+      <!-- Handle -->
+      <line x1="4.5" y1="4.5" x2="10" y2="10" 
+            stroke="#ffffff" 
+            stroke-width="2.5" 
+            stroke-linecap="round"/>
+    </g>
+    
+    <!-- Small orbiting dots representing data/files -->
+    <circle cx="-15" cy="2" r="2" fill="#ffffff" opacity="0.8"/>
+    <circle cx="10" cy="-15" r="1.5" fill="#00c4ff" opacity="0.9"/>
+    <circle cx="16" cy="5" r="1.8" fill="#ffffff" opacity="0.6"/>
+  </g>
+  
+  <!-- Text: "Blob Explorer" -->
+  <text x="48" y="28" 
+        font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" 
+        font-size="26" 
+        font-weight="600"
+        letter-spacing="-0.5">
+    <tspan fill="#0099DA">Blob</tspan><tspan dx="6" fill="#ffffff">Explorer</tspan>
+  </text>
+</svg>

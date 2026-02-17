@@ -1,0 +1,37 @@
+services:
+  blob-explorer:
+    container_name: blob-explorer
+    image: joshooaj/blobexplorer:latest
+    build: .
+    # Uncomment or set in docker-compose.override.yaml as needed
+    # ports:
+    #   - "8080:8080"
+    volumes:
+      # Config directory - a config.json will be auto-created on first run
+      # Edit config/config.json to customize favorites and other settings
+      - ./config:/config
+      # Cache directory - persists blob data across container restarts
+      # On startup, cached data is used immediately while stale data refreshes in background
+      - blob-cache:/cache
+    environment:
+      # RECOMMENDED: Set vars in docker-compose.override.yaml as needed
+      # Required: Azure Blob Storage container URL
+      # - BASE_URL=https://your-storage.blob.core.windows.net/your-container
+      # Optional: Different base URL for downloads (e.g., CDN/Front Door)
+      # - DOWNLOAD_BASE=https://your-cdn.azurefd.net/your-container
+      # Optional: Site customization (can also be set in config.json)
+      # ENV vars take precedence over config file values
+      # - SITE_TITLE=Blob Explorer
+      # - SITE_DESCRIPTION=Browse and download files from Azure Blob Storage
+      # Optional: Custom logo URL (or set logoFile in config.json for a local file)
+      # - LOGO_URL=https://example.com/logo.svg
+      # Optional: Path to a custom logo file relative to the config folder
+      # - LOGO_FILE=my-logo.svg
+      # Optional: Allow users to browse any Azure Blob Storage URL via settings
+      # - ALLOW_CUSTOM_URL=true
+      # Optional: Update interval in seconds (default: 86400 = 24 hours)
+      # - UPDATE_INTERVAL=86400
+      - TZ=UTC
+
+volumes:
+  blob-cache:

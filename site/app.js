@@ -2,7 +2,7 @@
 let allDownloads = [];
 let filteredDownloads = [];
 let currentPath = [];
-let activeFileTypes = new Set(['Installer', 'PDF', 'ISO', 'ZIP']); // Default selections
+let activeFileTypes = new Set(); // Empty = all types shown
 let currentPage = 1;
 const itemsPerPage = 100;
 let worker = null;
@@ -658,7 +658,7 @@ function updateFileTypeFilterCounts() {
     selectAllBtn.textContent = 'Select All';
     selectAllBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        sortedTypes.forEach(([type]) => activeFileTypes.add(type));
+        activeFileTypes.clear(); // Empty set = all types shown
         updateFileTypeFilterCounts();
         currentPage = 1;
         displayDownloads();
@@ -689,12 +689,20 @@ function updateFileTypeFilterCounts() {
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.value = type;
-        checkbox.checked = currentSelections.has(type) || activeFileTypes.has(type);
+        checkbox.checked = activeFileTypes.size === 0 || activeFileTypes.has(type);
         
         checkbox.addEventListener('change', () => {
             if (checkbox.checked) {
                 activeFileTypes.add(type);
+                // If all types are now selected, reset to empty set (= all)
+                if (activeFileTypes.size >= sortedTypes.length) {
+                    activeFileTypes.clear();
+                }
             } else {
+                // If currently "all" (empty set), populate with all types first
+                if (activeFileTypes.size === 0) {
+                    sortedTypes.forEach(([t]) => activeFileTypes.add(t));
+                }
                 activeFileTypes.delete(type);
             }
             updateFilterButtonText();

@@ -312,8 +312,8 @@ Blob Explorer runs as a single Docker container:
 
 ## Requirements
 
-- Public Azure Blob Storage container with anonymous read access
-- Docker and Docker Compose
+- Public Azure Blob Storage container with anonymous access level set to "Container"
+- Docker, podman, or whatever your container tool of choice is
 
 ## License
 

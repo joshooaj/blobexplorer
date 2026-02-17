@@ -36,7 +36,7 @@ RUN chmod -R a+w /usr/share/nginx/html \
     && chmod -R a+w /var/cache/nginx \
     && chmod -R a+w /var/log/nginx \
     && chmod a+rwx /config /cache \
-    && sed -i 's|/var/run/nginx.pid|/tmp/nginx.pid|' /etc/nginx/nginx.conf
+    && sed -i 's|/run/nginx.pid|/tmp/nginx.pid|' /etc/nginx/nginx.conf
 
 # Environment variables for configuration
 ENV BASE_URL="" \

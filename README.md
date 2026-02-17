@@ -202,6 +202,7 @@ Blob Explorer dispatches custom events that you can hook into with any analytics
 | `blob-explorer:filter-change` | `activeFilters`, `totalFilters`, `timestamp` |
 | `blob-explorer:theme-change` | `theme`, `timestamp` |
 | `blob-explorer:favorite-add` / `favorite-remove` | `label`, `type`, `path`, `timestamp` |
+| `blob-explorer:custom-url-load` | `host`, `container`, `blobCount`, `timestamp` |
 
 <details>
 <summary><strong>Example: Google Analytics 4</strong></summary>

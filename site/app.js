@@ -28,6 +28,7 @@ let fileTypeCache = new Map(); // Cache file type info to avoid repeated calcula
 //   blob-explorer:theme-change   - User toggled theme
 //   blob-explorer:favorite-add   - User added a favorite
 //   blob-explorer:favorite-remove - User removed a favorite
+//   blob-explorer:custom-url-load - User loaded a custom storage URL
 //
 // Example usage with Google Analytics:
 //   document.addEventListener('blob-explorer:download', (e) => {
@@ -104,6 +105,19 @@ const BlobExplorerAnalytics = {
     /** Track favorite removed */
     favoriteRemove(label, type, path) {
         this.dispatch('favorite-remove', { label, type, path });
+    },
+
+    /** Track custom storage URL loaded */
+    customUrlLoad(url, blobCount) {
+        // Extract host + container path without exposing query params (e.g. SAS tokens)
+        let host = '';
+        let container = '';
+        try {
+            const parsed = new URL(url);
+            host = parsed.hostname;
+            container = parsed.pathname.replace(/^\//, '');
+        } catch { /* ignore */ }
+        this.dispatch('custom-url-load', { host, container, blobCount });
     }
 };
 
@@ -2313,6 +2327,7 @@ function initializeSettingsModal() {
         try {
             const result = await loadDataFromCustomUrl(url);
             saveCustomUrl(url);
+            BlobExplorerAnalytics.customUrlLoad(url, result.count);
             showStatus('success', `Loaded ${result.count.toLocaleString()} items successfully!`);
             
             // Close modal after brief delay

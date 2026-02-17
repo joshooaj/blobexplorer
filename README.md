@@ -16,6 +16,12 @@
 
 ---
 
+## Demo
+
+Visit [blobexplorer.joshooaj.com](https://blobexplorer.joshooaj.com) to see what an Azure storage container looks like.
+
+For a more interesting storage container, click the settings "gear" icon at the top and enter your own URL. If you use a search engine with the query `inurl:"blob.core.windows.net/"` you might find some storage containers with anonymous access enabled.
+
 ## Features
 
 - **Fast Navigation** — Hierarchical folder tree with O(1) lookups for 100K+ files

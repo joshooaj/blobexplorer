@@ -14,7 +14,7 @@ RUN apk add --no-cache \
     gzip \
     tzdata \
     tini \
-    && mkdir -p /usr/share/nginx/html/data /scripts /config-defaults
+    && mkdir -p /usr/share/nginx/html/data /scripts /config-defaults /config /cache
 
 # Copy files in order of change frequency (least → most) for better layer caching
 # nginx config rarely changes
@@ -28,6 +28,15 @@ COPY --chmod=755 scripts/ /scripts/
 
 # Static site files change most frequently
 COPY site/ /usr/share/nginx/html/
+
+# Make runtime-writable paths accessible to any UID (rootless/OpenShift compatibility)
+# These paths are modified at startup by entrypoint and config scripts
+RUN chmod -R a+w /usr/share/nginx/html \
+    && chmod -R a+w /etc/nginx/conf.d \
+    && chmod -R a+w /var/cache/nginx \
+    && chmod -R a+w /var/log/nginx \
+    && chmod a+rwx /config /cache \
+    && sed -i 's|/var/run/nginx.pid|/tmp/nginx.pid|' /etc/nginx/nginx.conf
 
 # Environment variables for configuration
 ENV BASE_URL="" \

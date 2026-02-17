@@ -7,6 +7,8 @@ networks:
 
 services:
   blob-explorer:
+    # Optional: Run as a specific user (e.g., to match host file ownership)
+    # user: "1000:1000"
     environment:
       - BASE_URL=https://your-storage.blob.core.windows.net/your-container
       - LOGO_FILE=customlogo.svg

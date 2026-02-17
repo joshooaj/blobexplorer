@@ -93,8 +93,8 @@ log "BASE_URL: $BASE_URL"
 log "DOWNLOAD_BASE: $DOWNLOAD_BASE"
 log "UPDATE_INTERVAL: ${UPDATE_INTERVAL}s"
 
-# Ensure directories exist
-mkdir -p "$CONFIG_DIR" "$CACHE_DIR" "$DATA_DIR"
+# Ensure directories exist (created in Dockerfile, but mkdir -p is safe if bind-mounted)
+mkdir -p "$CONFIG_DIR" "$CACHE_DIR" "$DATA_DIR" 2>/dev/null || true
 
 # Create default config file if it doesn't exist
 if [ ! -f "$CONFIG_FILE" ]; then

@@ -2,7 +2,8 @@
 let allDownloads = [];
 let filteredDownloads = [];
 let currentPath = [];
-let activeFileTypes = new Set(); // Empty = all types shown
+let activeFileTypes = new Set();
+let allFileTypesSelected = true; // true = show all types, false = use activeFileTypes set
 let currentPage = 1;
 const itemsPerPage = 100;
 let worker = null;
@@ -589,6 +590,7 @@ function filterDownloads(downloads, options = {}) {
     const {
         searchTerm = '',
         fileTypes = new Set(),
+        allTypesSelected = true,
         excludeZeroByte = true
     } = options;
     
@@ -599,7 +601,10 @@ function filterDownloads(downloads, options = {}) {
         }
         
         // File type filter
-        if (fileTypes.size > 0) {
+        if (!allTypesSelected) {
+            if (fileTypes.size === 0) {
+                return false; // No types selected = show nothing
+            }
             const typeInfo = getFileTypeInfo(download);
             if (!fileTypes.has(typeInfo.name)) {
                 return false;
@@ -658,7 +663,8 @@ function updateFileTypeFilterCounts() {
     selectAllBtn.textContent = 'Select All';
     selectAllBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        activeFileTypes.clear(); // Empty set = all types shown
+        allFileTypesSelected = true;
+        activeFileTypes.clear();
         updateFileTypeFilterCounts();
         currentPage = 1;
         displayDownloads();
@@ -671,6 +677,7 @@ function updateFileTypeFilterCounts() {
     selectNoneBtn.textContent = 'Select None';
     selectNoneBtn.addEventListener('click', (e) => {
         e.stopPropagation();
+        allFileTypesSelected = false;
         activeFileTypes.clear();
         updateFileTypeFilterCounts();
         currentPage = 1;
@@ -689,19 +696,23 @@ function updateFileTypeFilterCounts() {
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.value = type;
-        checkbox.checked = activeFileTypes.size === 0 || activeFileTypes.has(type);
+        checkbox.checked = allFileTypesSelected || activeFileTypes.has(type);
         
         checkbox.addEventListener('change', () => {
             if (checkbox.checked) {
                 activeFileTypes.add(type);
-                // If all types are now selected, reset to empty set (= all)
+                // If all types are now selected, reset to "all" state
                 if (activeFileTypes.size >= sortedTypes.length) {
+                    allFileTypesSelected = true;
                     activeFileTypes.clear();
+                } else {
+                    allFileTypesSelected = false;
                 }
             } else {
-                // If currently "all" (empty set), populate with all types first
-                if (activeFileTypes.size === 0) {
+                // If currently "all", populate with all types first then remove
+                if (allFileTypesSelected) {
                     sortedTypes.forEach(([t]) => activeFileTypes.add(t));
+                    allFileTypesSelected = false;
                 }
                 activeFileTypes.delete(type);
             }
@@ -729,8 +740,10 @@ function updateFilterButtonText() {
     const filterBtn = document.getElementById('filterBtnText');
     const count = activeFileTypes.size;
     
-    if (count === 0) {
+    if (allFileTypesSelected) {
         filterBtn.textContent = 'All Types';
+    } else if (count === 0) {
+        filterBtn.textContent = 'No Types';
     } else {
         const types = Array.from(activeFileTypes).join(', ');
         filterBtn.textContent = count <= 2 ? types : `${count} types selected`;
@@ -1276,7 +1289,10 @@ function applyFilters() {
         }
         
         // File type filter
-        if (activeFileTypes.size > 0) {
+        if (!allFileTypesSelected) {
+            if (activeFileTypes.size === 0) {
+                return false;
+            }
             const typeInfo = getFileTypeInfo(download);
             if (!activeFileTypes.has(typeInfo.name)) {
                 return false;
@@ -1421,11 +1437,12 @@ function folderHasMatchingFiles(parentPath, folderName) {
         const hasMatchingFile = node.files.some(download => {
             if (download.Length <= 0) return false;
             // If file type filter is active, check against it
-            if (activeFileTypes.size > 0) {
+            if (!allFileTypesSelected) {
+                if (activeFileTypes.size === 0) return false;
                 const typeInfo = getFileTypeInfo(download);
                 return activeFileTypes.has(typeInfo.name);
             }
-            return true; // No filter, any non-zero file counts
+            return true; // All types selected, any non-zero file counts
         });
         
         if (hasMatchingFile) return true;
@@ -1456,6 +1473,7 @@ function displayDownloads() {
         const filteredFiles = filterDownloads(allDownloads, {
             searchTerm,
             fileTypes: activeFileTypes,
+            allTypesSelected: allFileTypesSelected,
             excludeZeroByte: true
         });
         
@@ -1477,6 +1495,7 @@ function displayDownloads() {
     // Filter files using shared utility
     const files = filterDownloads(node.files, {
         fileTypes: activeFileTypes,
+        allTypesSelected: allFileTypesSelected,
         excludeZeroByte: true
     });
     
@@ -1582,6 +1601,7 @@ function getCurrentViewItemCount() {
         return filterDownloads(allDownloads, {
             searchTerm,
             fileTypes: activeFileTypes,
+            allTypesSelected: allFileTypesSelected,
             excludeZeroByte: true
         }).length;
     }
@@ -1594,6 +1614,7 @@ function getCurrentViewItemCount() {
     const folders = Array.from(node.folders);
     const files = filterDownloads(node.files, {
         fileTypes: activeFileTypes,
+        allTypesSelected: allFileTypesSelected,
         excludeZeroByte: true
     });
     

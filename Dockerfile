@@ -52,7 +52,7 @@ ENV BASE_URL="" \
 EXPOSE 8080
 
 HEALTHCHECK --start-period=10s --start-interval=2s --interval=30s --timeout=5s --retries=3 \
-    CMD wget -qO /dev/null http://localhost:8080/ || exit 1
+    CMD wget -qO /dev/null http://127.0.0.1:8080/ || exit 1
 
 # Use tini as init system to handle signals properly
 ENTRYPOINT ["/sbin/tini", "--"]

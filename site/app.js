@@ -5,7 +5,12 @@ let currentPath = [];
 let activeFileTypes = new Set();
 let allFileTypesSelected = true; // true = show all types, false = use activeFileTypes set
 let worker = null;
-let sortBy = 'date-desc'; // date-desc, date-asc, size-desc, size-asc, name-asc
+// name/type/date/size, each -asc or -desc. A first-time visitor starts
+// alphabetical (name-asc); applySort persists the visitor's choice.
+const SORT_OPTIONS = ['name-asc', 'name-desc', 'type-asc', 'type-desc',
+    'date-asc', 'date-desc', 'size-asc', 'size-desc'];
+const storedSort = localStorage.getItem('explorerSort');
+let sortBy = SORT_OPTIONS.includes(storedSort) ? storedSort : 'name-asc';
 
 // Performance optimizations
 let folderTree = new Map(); // Hierarchical folder structure for O(1) navigation
@@ -1946,6 +1951,7 @@ function syncSortHeaders() {
 
 function applySort(value) {
     sortBy = value;
+    localStorage.setItem('explorerSort', sortBy);
     const sel = document.getElementById('sortBy');
     if (sel) sel.value = sortBy;
     syncSortHeaders();
@@ -2142,10 +2148,9 @@ function initializeSearch(updateClearButtonVisibility) {
 
 // Initialize sort dropdown (cycleSort keeps its value in sync)
 function initializeSortSelect() {
-    document.getElementById('sortBy').addEventListener('change', (e) => {
-        sortBy = e.target.value;
-        displayDownloads();
-    });
+    const sel = document.getElementById('sortBy');
+    sel.value = sortBy;
+    sel.addEventListener('change', (e) => applySort(e.target.value));
 }
 
 // Initialize file type filter dropdown

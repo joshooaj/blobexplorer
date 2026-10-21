@@ -4,7 +4,7 @@
   "description": "Dev-only tooling (lint + tests). Nothing here ships in the Docker image.",
   "scripts": {
     "lint": "eslint site tests",
-    "test": "node --test tests/",
+    "test": "node --test tests/*.test.mjs",
     "test:python": "python3 -m unittest discover -s tests -v",
     "test:shell": "podman run --rm -v $PWD:/mnt:ro --entrypoint /bin/sh docker.io/koalaman/shellcheck-alpine:stable -c 'shellcheck /mnt/scripts/*.sh'"
   },

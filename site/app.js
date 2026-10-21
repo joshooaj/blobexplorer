@@ -4,7 +4,6 @@ let filteredDownloads = [];
 let currentPath = [];
 let activeFileTypes = new Set();
 let allFileTypesSelected = true; // true = show all types, false = use activeFileTypes set
-let worker = null;
 // name/type/date/size, each -asc or -desc. A first-time visitor starts
 // alphabetical (name-asc); applySort persists the visitor's choice.
 const SORT_OPTIONS = ['name-asc', 'name-desc', 'type-asc', 'type-desc',
@@ -305,6 +304,7 @@ async function fetchMetadata(updateUI = true) {
             return metadata;
         }
     } catch {
+        // metadata.json is optional; missing metadata just skips the UI update.
     }
     return null;
 }
@@ -429,7 +429,6 @@ function buildFolderTree() {
     
     allDownloads.forEach(download => {
         const parts = download.Name.split('/');
-        const fileName = parts[parts.length - 1];
         
         // Pre-cache file type info
         getFileTypeInfo(download);
@@ -636,7 +635,7 @@ function makeSearchMatcher(searchTerm) {
             const pattern = searchTerm.startsWith('/') ? searchTerm.slice(1) : searchTerm;
             const regex = new RegExp(pattern, 'i');
             matcher = (text) => regex.test(text);
-        } catch (e) {
+        } catch {
             // Invalid regex, fall back to literal search
             matcher = (text) => text.includes(searchTerm);
         }
@@ -725,7 +724,6 @@ function updateFileTypeFilterCounts() {
     });
     
     const filterContainer = document.getElementById('fileTypeFilter');
-    const filterBtn = document.getElementById('filterBtnText');
     const prevScroll = filterContainer.scrollTop;
     filterContainer.innerHTML = '';
     
@@ -860,7 +858,6 @@ function matchFolders(pattern, limit = 10, sortOrder = 'desc') {
             const match = folder.match(new RegExp(pattern, 'i'));
             if (match) {
                 const matchedPart = folder.substring(0, match.index + match[0].length);
-                const folderName = matchedPart.split('/').pop();
                 
                 // Keep only the shortest path for each folder name
                 if (!matchedPaths.has(matchedPart) || folder.length < matchedPaths.get(matchedPart).length) {
@@ -904,7 +901,7 @@ function renderFavorites() {
     
     // Then render system favorites from config
     const favoritesConfig = getFavoritesConfig();
-    favoritesConfig.forEach((favorite, index) => {
+    favoritesConfig.forEach(favorite => {
         // Handle different favorite types from config
         if (favorite.type === 'search' || favorite.searchPattern) {
             // Search type: run a search query when clicked
@@ -2052,7 +2049,7 @@ async function copyToClipboard(text, button, successMessage) {
     try {
         await navigator.clipboard.writeText(text);
         feedback();
-    } catch (err) {
+    } catch {
         // Fallback for older browsers
         const textArea = document.createElement('textarea');
         textArea.value = text;
@@ -2064,7 +2061,7 @@ async function copyToClipboard(text, button, successMessage) {
         try {
             document.execCommand('copy');
             feedback();
-        } catch (e) {
+        } catch {
             showToast('Failed to copy');
         }
 
@@ -3001,3 +2998,18 @@ document.addEventListener('DOMContentLoaded', () => {
         loadData();
     }
 });
+
+// Test seam: `node --test tests/` loads this file as CommonJS to exercise
+// pure helpers (see tests/app.test.mjs). Browsers never define `module`,
+// so this guard never runs in production; app.js stays a plain <script>
+// with no build step.
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        esc,
+        getFileExtension,
+        formatFileSize,
+        wildcardToRegex,
+        fuzzyScore,
+        makeSearchMatcher
+    };
+}

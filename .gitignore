@@ -3,3 +3,5 @@ config/analytics.js
 config/config.json
 docker-compose.override.yaml
 scratch/
+node_modules/
+__pycache__/

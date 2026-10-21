@@ -52,6 +52,11 @@ logo_url = get_env_override('LOGO_URL') or config.get('logoUrl') or ''
 logo_file = get_env_override('LOGO_FILE') or config.get('logoFile') or ''
 download_base = os.environ.get('DOWNLOAD_BASE') or os.environ.get('BASE_URL', '')
 allow_custom_url = os.environ.get('ALLOW_CUSTOM_URL', 'false').lower() == 'true'
+show_folders_raw = os.environ.get('SHOW_FOLDERS_NAV')
+if show_folders_raw is None:
+    show_folders = bool(config.get('showFoldersNav', False))
+else:
+    show_folders = show_folders_raw.strip().lower() in ('1', 'true', 'yes', 'on')
 analytics_script = config.get('analyticsScript') or ''
 
 # Get favorites from config (no ENV override for this complex structure)
@@ -80,6 +85,7 @@ window.APP_CONFIG = {{
     logoFile: {json.dumps(logo_file)},
     downloadBase: {json.dumps(download_base)},
     allowCustomUrl: {str(allow_custom_url).lower()},
+    showFoldersNav: {str(show_folders).lower()},
     favorites: {json.dumps(favorites, indent=8)}
 }};
 '''
@@ -93,22 +99,28 @@ print(f"__ANALYTICS_SCRIPT__={analytics_script}", file=os.sys.stderr)
 PYTHON_SCRIPT
 }
 
-# Generate the config.js file
-CONFIG_OUTPUT=$(read_config 2>&1)
+# Generate the config.js file. Only stdout (the JavaScript) may ever reach
+# config.js; warnings and __META__ markers live on stderr, kept separate.
+STDERR_LOG=$(mktemp)
+CONFIG_OUTPUT=$(read_config 2>"$STDERR_LOG")
 CONFIG_EXIT=$?
 
 if [ $CONFIG_EXIT -ne 0 ]; then
-    echo "$CONFIG_OUTPUT" >&2
+    cat "$STDERR_LOG" >&2
+    rm -f "$STDERR_LOG"
     exit $CONFIG_EXIT
 fi
 
-# Extract the JavaScript part (stdout) and metadata (stderr)
-echo "$CONFIG_OUTPUT" | grep -v "^__" > "$OUTPUT_FILE"
+# Surface real warnings (anything that is not a __META__ marker)
+grep -v '^__' "$STDERR_LOG" >&2 || true
+
+echo "$CONFIG_OUTPUT" > "$OUTPUT_FILE"
 
 # Extract values for updating index.html
-EFFECTIVE_SITE_TITLE=$(echo "$CONFIG_OUTPUT" | grep "^__SITE_TITLE__=" | cut -d= -f2-)
-EFFECTIVE_SITE_DESCRIPTION=$(echo "$CONFIG_OUTPUT" | grep "^__SITE_DESCRIPTION__=" | cut -d= -f2-)
-EFFECTIVE_ANALYTICS_SCRIPT=$(echo "$CONFIG_OUTPUT" | grep "^__ANALYTICS_SCRIPT__=" | cut -d= -f2-)
+EFFECTIVE_SITE_TITLE=$(grep '^__SITE_TITLE__=' "$STDERR_LOG" | cut -d= -f2-)
+EFFECTIVE_SITE_DESCRIPTION=$(grep '^__SITE_DESCRIPTION__=' "$STDERR_LOG" | cut -d= -f2-)
+EFFECTIVE_ANALYTICS_SCRIPT=$(grep '^__ANALYTICS_SCRIPT__=' "$STDERR_LOG" | cut -d= -f2-)
+rm -f "$STDERR_LOG"
 
 echo "Generated config.js with SITE_TITLE=${EFFECTIVE_SITE_TITLE:-Blob Explorer}"
 

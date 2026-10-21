@@ -5,14 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Blob Explorer</title>
     <meta name="description" content="Browse and download files from Azure Blob Storage">
-    
-    <!-- Favicons -->
-    <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32x32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16x16.png">
-    <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
-    <link rel="icon" type="image/x-icon" href="favicon.ico">
-    
-    <!-- Open Graph / Social Card -->
     <meta property="og:type" content="website">
     <meta property="og:title" content="Blob Explorer">
     <meta property="og:description" content="Browse and download files from Azure Blob Storage">
@@ -21,14 +13,17 @@
     <meta name="twitter:title" content="Blob Explorer">
     <meta name="twitter:description" content="Browse and download files from Azure Blob Storage">
     <meta name="twitter:image" content="assets/blob-explorer-social-card.png">
-    
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16x16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+
     <!-- Prevent flash of incorrect theme by setting data-theme before render -->
     <script>
-        (function() {
-            var theme = localStorage.getItem('theme');
-            if (!theme) {
-                theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-            }
+        (function () {
+            const saved = localStorage.getItem('theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const theme = saved || (prefersDark ? 'dark' : 'light');
             document.documentElement.setAttribute('data-theme', theme);
         })();
     </script>
@@ -37,93 +32,162 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <a href="#main-content" class="skip-link">Skip to main content</a>
-    <div class="container">
-        <header>
-            <div class="header-top">
-                <div class="header-brand" id="headerBrand" style="cursor: pointer;" role="button" tabindex="0" aria-label="Go to home page">
-                    <img src="assets/blob-explorer-logo.svg" alt="Blob Explorer" class="site-logo" id="siteLogo">
-                </div>
-                <div class="header-actions">
-                    <button id="darkModeToggle" class="theme-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">
-                        <span class="toggle-icon sun-icon" aria-hidden="true"><span class="icon-sun"></span></span>
-                        <span class="toggle-icon moon-icon" aria-hidden="true"><span class="icon-moon"></span></span>
-                        <span class="toggle-slider" aria-hidden="true"></span>
-                    </button>
-                    <button id="settingsButton" class="settings-button" aria-label="Settings" title="Settings" style="display: none;">
-                        <span class="icon-settings" aria-hidden="true"></span>
-                    </button>
-                    <button id="helpButton" class="help-button" aria-label="Help" title="Help">?</button>
-                </div>
-            </div>
-            <div class="header-controls">
-                <div class="search-bar" role="search">
-                    <label for="searchInput" class="sr-only">Search downloads</label>
-                    <input type="text" id="searchInput" placeholder="Search downloads..." aria-describedby="searchHint">
-                    <span id="searchHint" class="sr-only">Press slash to focus, use wildcards (*) or prefix with ^ for regex</span>
-                    <button id="clearSearch" aria-label="Clear search">✕</button>
-                </div>
-            </div>
-        </header>
+    <a href="#main-content" class="skip-link">Skip to file list</a>
 
-        <div class="main-content">
-            <button id="sidebarToggle" class="sidebar-toggle" aria-label="Toggle navigation" aria-expanded="false" aria-controls="sidebar">
-                <span class="hamburger-icon" aria-hidden="true">☰</span>
-                <span class="close-icon" aria-hidden="true">✕</span>
+    <div class="app">
+        <!-- Window title bar -->
+        <div class="titlebar">
+            <button id="sidebarToggle" class="tb-btn nav-toggle" aria-label="Navigation pane" aria-expanded="false" aria-controls="sidebar">
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 4.5h16M2 10h16M2 15.5h16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
             </button>
+            <div class="title-brand" id="headerBrand" role="button" tabindex="0" aria-label="Go to home page" title="Blob Explorer — home">
+                <img src="assets/blob-explorer-mark.svg" alt="" class="site-logo" id="siteLogo" width="16" height="16">
+                <span class="tb-title" id="wordmark">Blob Explorer</span>
+            </div>
+            <span class="tb-spacer"></span>
+            <button id="settingsButton" class="tb-btn" aria-label="Open another storage container" title="Open another container" style="display: none;">
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 5.6c0-.9.7-1.6 1.6-1.6h3.4c.5 0 1 .2 1.3.7l.8 1.1h6.3c.9 0 1.6.7 1.6 1.6v.9M2.5 7.4h15l-1.3 7c-.1.7-.7 1.2-1.4 1.2H5.2c-.7 0-1.3-.5-1.4-1.2l-1.3-7z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/></svg>
+            </button>
+            <button id="helpButton" class="tb-btn" aria-label="Help" title="Help and keyboard shortcuts">
+                <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.75" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M7.9 7.6c.15-1.3 1.2-2.1 2.2-2.1 1.15 0 2.05.8 2.05 1.9 0 1.5-1.55 1.6-1.85 2.9M10.3 13.8v.9" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>
+            </button>
+            <button id="darkModeToggle" class="tb-btn" aria-label="Toggle theme" title="Toggle theme">
+                <svg class="ico-sun" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="3.6" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M15.3 4.7l-1.4 1.4M6.1 13.9l-1.4 1.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+                <svg class="ico-moon" viewBox="0 0 20 20" aria-hidden="true"><path d="M12.6 3.2a7.3 7.3 0 1 0 4.2 11.3A6.4 6.4 0 0 1 12.6 3.2z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/></svg>
+            </button>
+        </div>
+
+        <div class="explorer">
             <div class="sidebar-overlay" id="sidebarOverlay"></div>
-            <aside class="sidebar" id="sidebar" role="navigation" aria-label="Main navigation">
-                <div class="home-link-section">
-                    <h3 id="homeLink" style="cursor: pointer;" role="button" tabindex="0" aria-label="Go to home page"><span class="icon-home" aria-hidden="true"></span> Home</h3>
+
+            <!-- Navigation pane -->
+            <aside class="sidebar" id="sidebar" role="navigation" aria-label="Navigation pane">
+                <div class="nav-collapse-row">
+                    <button id="navCollapse" class="nav-collapse-btn" aria-label="Hide navigation pane" aria-controls="sidebar" aria-expanded="true" title="Hide navigation pane (Ctrl+B)">
+                        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 5.5 8 10l4.5 4.5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
                 </div>
-                <div class="filter-section">
-                    <h3><span class="icon-star" aria-hidden="true"></span> Favorites</h3>
-                    <nav id="favoritesTree" aria-label="Favorites navigation"></nav>
+                <div class="nav-home" id="homeLink" role="button" tabindex="0" aria-label="Home">
+                    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 9.3 10 3.6l6.5 5.7M5.2 8v7.4c0 .4.3.6.6.6h3.1v-3.6c0-.4.2-.6.6-.6h1c.4 0 .6.2.6.6v3.6h3.1c.3 0 .6-.2.6-.6V8" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    <span>Home</span>
+                </div>
+                <div class="nav-section">
+                    <h3 class="nav-heading">Pinned</h3>
+                    <nav id="favoritesTree" aria-label="Pinned folders and searches"></nav>
+                </div>
+                <div class="nav-section nav-folders">
+                    <h3 class="nav-heading">Folders</h3>
+                    <nav id="folderNav" aria-label="Folder tree"></nav>
                 </div>
             </aside>
 
-            <main class="content" id="main-content">
-                <div class="filter-bar" role="group" aria-label="Filter and sort options">
-                    <label for="fileTypeFilterBtn">File Types:</label>
-                    <div class="custom-dropdown">
-                        <button type="button" id="fileTypeFilterBtn" class="dropdown-btn" aria-haspopup="listbox" aria-expanded="false" aria-controls="fileTypeFilter">
-                            <span id="filterBtnText">Select types...</span>
-                            <span class="dropdown-arrow" aria-hidden="true">▼</span>
+            <!-- Content pane -->
+            <main class="pane" id="main-content">
+                <div class="toolbar">
+                    <div class="tool-row address-row">
+                        <button id="navRestore" class="tool-btn nav-restore" aria-label="Show navigation pane" aria-controls="sidebar" title="Show navigation pane (Ctrl+B)">
+                            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 4.5h16M2 10h16M2 15.5h16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/><path d="M7 7.5 9.5 10 7 12.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
                         </button>
-                        <div id="fileTypeFilter" class="dropdown-content" role="listbox" aria-label="File type options">
+                        <button id="backButton" class="tool-btn" aria-label="Back" title="Back (Alt+←)" disabled>
+                            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M11.5 4.5 6 10l5.5 5.5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        </button>
+                        <button id="upButton" class="tool-btn" aria-label="Up to parent folder" title="Up" disabled>
+                            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 15.5V5M5 9.7 10 4.5l5 5.2" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        </button>
+                        <nav id="breadcrumbs" class="breadcrumbs" aria-label="Breadcrumbs"></nav>
+                        <div class="search-box" role="search">
+                            <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="5.25" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="m13 13 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                            <input type="text" id="searchInput" placeholder="Search" autocomplete="off" spellcheck="false" aria-describedby="searchHint">
+                            <span id="searchHint" class="sr-only">Press slash to focus. Wildcards (*), regex (^pattern or /pattern), and fuzzy (~text) are supported.</span>
+                            <button id="clearSearch" aria-label="Clear search">
+                                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5.5 5.5 9 9M14.5 5.5l-9 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                            </button>
                         </div>
                     </div>
-                    
-                    <label for="sortBy">Sort By:</label>
-                    <select id="sortBy">
-                        <option value="date-desc">Date (Newest First)</option>
-                        <option value="date-asc">Date (Oldest First)</option>
-                        <option value="size-desc">Size (Largest First)</option>
-                        <option value="size-asc">Size (Smallest First)</option>
-                        <option value="name-asc">Name (A-Z)</option>
-                    </select>
-                </div>
-                <div class="stats">
-                    <span id="resultCount" aria-live="polite" aria-atomic="true">Loading...</span>
-                    <span id="lastUpdated" class="last-updated"></span>
-                    <div class="pagination-controls" id="paginationTop" style="display: none;">
-                        <button id="firstPage">⏮ First</button>
-                        <button id="prevPage">← Previous</button>
-                        <span id="pageInfo"></span>
-                        <button id="nextPage">Next →</button>
-                        <button id="lastPage">Last ⏭</button>
+                    <div class="tool-row commands-row">
+                        <button id="cmdCopy" class="cmd-btn" aria-label="Copy link (Ctrl+C)" title="Copy link (Ctrl+C)">
+                            <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7.2" y="3.7" width="9" height="11" rx="1.5" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M12.3 15.8v.5a1.5 1.5 0 0 1-1.5 1.5H4.8a1.5 1.5 0 0 1-1.5-1.5v-8a1.5 1.5 0 0 1 1.5-1.5h.5" stroke="currentColor" stroke-width="1.4" fill="none"/></svg>
+                            <span>Copy link</span>
+                        </button>
+                        <button id="cmdDownload" class="cmd-btn" aria-label="Download (Enter)" title="Download (Enter)">
+                            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3.5v9M5.8 8.5 10 12.7l4.2-4.2M4 16.3h12" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span>Download</span>
+                        </button>
+                        <button id="cmdPin" class="cmd-btn" aria-label="Pin current view" title="Pin current view (Ctrl+P)">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 0-1-1 2 2 0 0 1-2-2 2 2 0 0 1-2 2 1 1 0 0 0-1 1z" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span>Pin</span>
+                        </button>
+                        <span class="cmd-sep" aria-hidden="true"></span>
+                        <div class="custom-dropdown">
+                            <button type="button" id="fileTypeFilterBtn" class="dropdown-btn" aria-haspopup="listbox" aria-expanded="false" aria-controls="fileTypeFilter" title="Filter by file type">
+                                <span id="filterBtnText">All file types</span>
+                                <span class="dropdown-arrow" aria-hidden="true">⌄</span>
+                            </button>
+                            <div id="fileTypeFilter" class="dropdown-content" role="listbox" aria-label="File type options">
+                            </div>
+                        </div>
+                        <select id="sortBy" hidden aria-label="Sort by">
+                            <option value="date-desc">Date, newest first</option>
+                            <option value="date-asc">Date, oldest first</option>
+                            <option value="size-desc">Size, largest first</option>
+                            <option value="size-asc">Size, smallest first</option>
+                            <option value="name-asc">Name, A to Z</option>
+                            <option value="name-desc">Name, Z to A</option>
+                            <option value="type-asc">Type, A to Z</option>
+                            <option value="type-desc">Type, Z to A</option>
+                        </select>
+                        <span class="cmd-spacer"></span>
+                        <div class="view-tools">
+                        <div class="seg" role="group" aria-label="View">
+                            <button id="viewListBtn" class="seg-btn active" aria-pressed="true" title="Details view">
+                                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                                <span>Details</span>
+                            </button>
+                            <button id="viewTilesBtn" class="seg-btn" aria-pressed="false" title="Tiles view">
+                                <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/><rect x="11" y="3" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/><rect x="3" y="11" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/><rect x="11" y="11" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                                <span>Tiles</span>
+                            </button>
+                        </div>
+                        <button id="detailsToggle" class="cmd-btn" aria-pressed="false" aria-label="Details pane" title="Details pane">
+                            <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.8" y="4.2" width="14.4" height="11.6" rx="1.5" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M12.6 4.2v11.6" stroke="currentColor" stroke-width="1.4"/></svg>
+                            <span>Details pane</span>
+                        </button>
+                        </div>
                     </div>
                 </div>
-                <nav id="breadcrumbs" class="breadcrumbs" aria-label="Breadcrumb navigation"></nav>
-                <div id="downloadList" class="download-list" role="list" aria-label="Downloads and folders" aria-live="polite">
-                    <div class="loading" role="status">Loading downloads...</div>
+
+                <div class="list-area">
+                    <div class="list-card" id="downloadList">
+                        <div class="list-head" role="presentation">
+                            <button class="col col-name" data-sort="name" type="button">Name<span class="chev" aria-hidden="true"></span></button>
+                            <button class="col col-date" data-sort="date" type="button">Date modified<span class="chev" aria-hidden="true"></span></button>
+                            <button class="col col-type" data-sort="type" type="button">Type<span class="chev" aria-hidden="true"></span></button>
+                            <button class="col col-size" data-sort="size" type="button">Size<span class="chev" aria-hidden="true"></span></button>
+                            <span class="col col-act"></span>
+                        </div>
+                        <div class="table-rows" id="tableRows" role="list" aria-label="Files and folders">
+                            <div class="loading" role="status">Loading…</div>
+                        </div>
+                    </div>
+                    <aside class="details-pane" id="detailsPane" hidden aria-label="Details">
+                        <div class="details-empty" id="detailsEmpty">Select a file to see its details.</div>
+                        <div class="details-body" id="detailsBody" hidden></div>
+                    </aside>
                 </div>
-                <div class="pagination-controls" id="paginationBottom" style="display: none;">
-                    <button id="firstPageBottom">⏮ First</button>
-                    <button id="prevPageBottom">← Previous</button>
-                    <span id="pageInfoBottom"></span>
-                    <button id="nextPageBottom">Next →</button>
-                    <button id="lastPageBottom">Last ⏭</button>
+
+                <div class="footer-bar">
+                    <span id="resultCount" aria-live="polite" aria-atomic="true">Loading…</span>
+                    <span id="statusSelection" aria-live="polite"></span>
+                    <span class="footer-spacer"></span>
+                    <span class="footer-meta">Updated <span id="lastUpdated">—</span></span>
+                </div>
+                <div id="sortHint" class="sort-hint" role="status" hidden>
+                    <span class="sort-hint-lead"><kbd>,</kbd> sort by</span>
+                    <span class="sort-hint-opt"><kbd>a</kbd><kbd>A</kbd>Name</span>
+                    <span class="sort-hint-opt"><kbd>e</kbd><kbd>E</kbd>Type</span>
+                    <span class="sort-hint-opt"><kbd>m</kbd><kbd>M</kbd>Date</span>
+                    <span class="sort-hint-opt"><kbd>s</kbd><kbd>S</kbd>Size</span>
+                    <span class="sort-hint-cancel">uppercase reverses · <kbd>Esc</kbd> cancel</span>
                 </div>
             </main>
         </div>
@@ -131,19 +195,21 @@
 
     <!-- Pin Favorite Modal -->
     <div id="pinModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="pinModalTitle">
-        <div class="modal-content pin-modal">
-            <button class="modal-close" id="pinModalClose" aria-label="Close modal">✕</button>
-            <h2 id="pinModalTitle">Pin to Favorites</h2>
-            <p id="pinTypeIndicator" class="pin-type-indicator"></p>
+        <div class="modal-content" role="document">
+            <button id="pinModalClose" class="modal-close" aria-label="Close">
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5.5 5.5 9 9M14.5 5.5l-9 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </button>
+            <h2 id="pinModalTitle">Pin to Quick access</h2>
+            <p class="pin-type-indicator" id="pinTypeIndicator"></p>
             <div class="pin-form">
-                <label for="pinNameInput">Name:</label>
-                <input type="text" id="pinNameInput" placeholder="Enter a name for this pin" maxlength="50">
+                <label for="pinNameInput">Name</label>
+                <input type="text" id="pinNameInput" maxlength="60" autocomplete="off">
             </div>
             <div class="pin-modal-actions">
-                <button id="pinDeleteBtn" class="pin-delete-btn">Delete</button>
+                <button id="pinSaveBtn" class="pin-save-btn">Pin</button>
+                <button id="pinDeleteBtn" class="pin-delete-btn" style="display: none;">Remove</button>
                 <div class="pin-modal-actions-right">
                     <button id="pinCancelBtn" class="pin-cancel-btn">Cancel</button>
-                    <button id="pinSaveBtn" class="pin-save-btn">Save</button>
                 </div>
             </div>
         </div>
@@ -151,129 +217,97 @@
 
     <!-- Settings Modal -->
     <div id="settingsModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
-        <div class="modal-content settings-modal">
-            <button class="modal-close" id="settingsModalClose" aria-label="Close modal">✕</button>
-            <h2 id="settingsModalTitle"><span class="icon-settings" aria-hidden="true"></span> Settings</h2>
-            
-            <div class="settings-section">
-                <h3>Custom Storage URL</h3>
-                <p class="settings-description">Browse any public Azure Blob Storage container by entering its URL below.</p>
-                
-                <div class="settings-form">
-                    <label for="customUrlInput">Azure Blob Storage URL:</label>
-                    <input type="url" id="customUrlInput" placeholder="https://account.blob.core.windows.net/container" 
-                           aria-describedby="customUrlHint">
-                    <span id="customUrlHint" class="settings-hint">Example: https://myaccount.blob.core.windows.net/mycontainer</span>
-                </div>
-                
-                <div class="settings-status" id="settingsStatus" style="display: none;">
-                    <span class="status-icon" aria-hidden="true"></span>
-                    <span class="status-text"></span>
-                </div>
-                
-                <div class="settings-actions">
-                    <button id="settingsResetBtn" class="settings-reset-btn">Reset to Default</button>
-                    <button id="settingsLoadBtn" class="settings-load-btn">Load Storage</button>
-                </div>
+        <div class="modal-content" role="document">
+            <button id="settingsModalClose" class="modal-close" aria-label="Close">
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5.5 5.5 9 9M14.5 5.5l-9 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </button>
+            <h2 id="settingsModalTitle">Open another container</h2>
+            <p class="settings-description">Point this portal at any public Azure Blob Storage container (anonymous access).</p>
+            <div class="settings-form">
+                <label for="customUrlInput">Container URL</label>
+                <input type="url" id="customUrlInput" placeholder="https://mystorage.blob.core.windows.net/mycontainer" autocomplete="off" spellcheck="false">
+                <p class="settings-hint">Files stream directly from the container; nothing is proxied.</p>
+                <div class="settings-status" id="settingsStatus" role="status" aria-live="polite"></div>
             </div>
-            
-            <div class="settings-info">
-                <p><strong>Note:</strong> The storage container must have anonymous public read access enabled.</p>
+            <div class="settings-actions">
+                <button id="settingsLoadBtn" class="settings-load-btn">Open</button>
+                <button id="settingsResetBtn" class="settings-reset-btn">Use default container</button>
             </div>
         </div>
     </div>
 
     <!-- Help Modal -->
     <div id="helpModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="helpModalHeading">
-        <div class="modal-content help-modal">
-            <button class="modal-close" id="helpModalClose" aria-label="Close modal">✕</button>
-            <div class="help-header">
-                <h2 id="helpModalHeading">Blob Explorer</h2>
-            </div>
-            
+        <div class="modal-content modal-wide" role="document">
+            <button id="helpModalClose" class="modal-close" aria-label="Close">
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5.5 5.5 9 9M14.5 5.5l-9 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </button>
+            <h2 id="helpModalHeading">Blob Explorer</h2>
             <div class="help-tabs" role="tablist" aria-label="Help sections">
-                <button class="help-tab active" role="tab" aria-selected="true" aria-controls="tab-about" id="tab-btn-about">About</button>
-                <button class="help-tab" role="tab" aria-selected="false" aria-controls="tab-keyboard" id="tab-btn-keyboard">Keyboard</button>
+                <button class="help-tab active" role="tab" aria-selected="true" id="helpTabShortcuts" aria-controls="tab-shortcuts">Keyboard</button>
+                <button class="help-tab" role="tab" aria-selected="false" id="helpTabAbout" aria-controls="tab-about">About</button>
             </div>
-            
-            <div class="help-tab-panels">
-                <div id="tab-about" class="help-tab-content active" role="tabpanel" aria-labelledby="tab-btn-about">
-                <p class="help-intro">A fast, user-friendly interface for browsing and downloading files from Azure Blob Storage.</p>
-                
-                <div class="feature-grid">
-                    <div class="feature-card">
-                        <span class="feature-icon">🔍</span>
-                        <strong>Search</strong>
-                        <span>Find files instantly by name or path</span>
-                    </div>
-                    <div class="feature-card">
-                        <span class="feature-icon">⚡</span>
-                        <strong>Regex</strong>
-                        <span>Prefix with <code>^</code> for pattern matching</span>
-                    </div>
-                    <div class="feature-card">
-                        <span class="feature-icon">📌</span>
-                        <strong>Favorites</strong>
-                        <span>Pin folders or searches for quick access</span>
-                    </div>
-                    <div class="feature-card">
-                        <span class="feature-icon">🎯</span>
-                        <strong>Filter</strong>
-                        <span>Show only specific file types</span>
-                    </div>
-                </div>
-
-            </div>
-            
-                <div id="tab-keyboard" class="help-tab-content" role="tabpanel" aria-labelledby="tab-btn-keyboard">
-                <p class="help-intro">Navigate the site efficiently using only your keyboard.</p>
-                
+            <div class="help-tab-content active" id="tab-shortcuts" role="tabpanel" aria-labelledby="helpTabShortcuts">
                 <div class="keyboard-shortcuts">
                     <div class="shortcut-group">
                         <h3>Navigation</h3>
-                        <div class="shortcut-item">
-                            <kbd>Tab</kbd>
-                            <span>Move to next interactive element</span>
-                        </div>
-                        <div class="shortcut-item">
-                            <kbd>Shift</kbd> + <kbd>Tab</kbd>
-                            <span>Move to previous element</span>
-                        </div>
-                        <div class="shortcut-item">
-                            <kbd>↑</kbd> <kbd>↓</kbd>
-                            <span>Navigate between list items</span>
-                        </div>
-                        <div class="shortcut-item">
-                            <kbd>Enter</kbd> or <kbd>Space</kbd>
-                            <span>Activate focused item</span>
-                        </div>
+                        <div class="shortcut-item"><kbd>↑</kbd><kbd>↓</kbd><span>Select next / previous item</span></div>
+                        <div class="shortcut-item"><kbd>Enter</kbd><span>Open folder or download file</span></div>
+                        <div class="shortcut-item"><kbd>Backspace</kbd><span>Go up one folder</span></div>
+                        <div class="shortcut-item"><kbd>Alt</kbd>+<kbd>←</kbd><span>Back</span></div>
+                        <div class="shortcut-item"><kbd>J</kbd><kbd>K</kbd><span>Next / previous (like ↑ ↓)</span></div>
+                        <div class="shortcut-item"><kbd>L</kbd><span>Open selected folder</span></div>
+                        <div class="shortcut-item"><kbd>H</kbd><span>Up one folder</span></div>
+                        <div class="shortcut-item"><kbd>/</kbd><span>Focus search</span></div>
+                        <div class="shortcut-item"><kbd>Enter</kbd><span>In search: leave the box</span></div>
+                        <div class="shortcut-item"><kbd>Esc</kbd><span>Clear search / close</span></div>
                     </div>
-                    
                     <div class="shortcut-group">
-                        <h3>Quick Actions</h3>
-                        <div class="shortcut-item">
-                            <kbd>/</kbd>
-                            <span>Focus search box</span>
-                        </div>
-                        <div class="shortcut-item">
-                            <kbd>Esc</kbd>
-                            <span>Close modal or clear search</span>
-                        </div>
+                        <h3>Commands</h3>
+                        <div class="shortcut-item"><kbd>Ctrl</kbd>+<kbd>C</kbd><span>Copy selected file's link</span></div>
+                        <div class="shortcut-item"><kbd>Ctrl</kbd>+<kbd>P</kbd><span>Pin current view</span></div>
+                        <div class="shortcut-item"><kbd>Home</kbd><span>Jump to first item</span></div>
+                        <div class="shortcut-item"><kbd>End</kbd><span>Jump to last item</span></div>
+                        <div class="shortcut-item"><kbd>PageUp</kbd><kbd>PageDown</kbd><span>Scroll a page</span></div>
+                        <div class="shortcut-item"><kbd>?</kbd><span>This help</span></div>
+                        <div class="shortcut-item"><kbd>Ctrl</kbd>+<kbd>B</kbd><span>Show or hide navigation pane</span></div>
+                        <div class="shortcut-item"><kbd>,</kbd><kbd>a</kbd><kbd>e</kbd><kbd>m</kbd><kbd>s</kbd><span>Sort view (uppercase reverses)</span></div>
                     </div>
-                </div>
                 </div>
             </div>
-
-            <div class="help-footer">
-                <a href="https://github.com/joshooaj/blobexplorer" target="_blank" rel="noopener noreferrer">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Free v7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M237.9 461.4C237.9 463.4 235.6 465 232.7 465C229.4 465.3 227.1 463.7 227.1 461.4C227.1 459.4 229.4 457.8 232.3 457.8C235.3 457.5 237.9 459.1 237.9 461.4zM206.8 456.9C206.1 458.9 208.1 461.2 211.1 461.8C213.7 462.8 216.7 461.8 217.3 459.8C217.9 457.8 216 455.5 213 454.6C210.4 453.9 207.5 454.9 206.8 456.9zM251 455.2C248.1 455.9 246.1 457.8 246.4 460.1C246.7 462.1 249.3 463.4 252.3 462.7C255.2 462 257.2 460.1 256.9 458.1C256.6 456.2 253.9 454.9 251 455.2zM316.8 72C178.1 72 72 177.3 72 316C72 426.9 141.8 521.8 241.5 555.2C254.3 557.5 258.8 549.6 258.8 543.1C258.8 536.9 258.5 502.7 258.5 481.7C258.5 481.7 188.5 496.7 173.8 451.9C173.8 451.9 162.4 422.8 146 415.3C146 415.3 123.1 399.6 147.6 399.9C147.6 399.9 172.5 401.9 186.2 425.7C208.1 464.3 244.8 453.2 259.1 446.6C261.4 430.6 267.9 419.5 275.1 412.9C219.2 406.7 162.8 398.6 162.8 302.4C162.8 274.9 170.4 261.1 186.4 243.5C183.8 237 175.3 210.2 189 175.6C209.9 169.1 258 202.6 258 202.6C278 197 299.5 194.1 320.8 194.1C342.1 194.1 363.6 197 383.6 202.6C383.6 202.6 431.7 169 452.6 175.6C466.3 210.3 457.8 237 455.2 243.5C471.2 261.2 481 275 481 302.4C481 398.9 422.1 406.6 366.2 412.9C375.4 420.8 383.2 435.8 383.2 459.3C383.2 493 382.9 534.7 382.9 542.9C382.9 549.4 387.5 557.3 400.2 555C500.2 521.8 568 426.9 568 316C568 177.3 455.5 72 316.8 72zM169.2 416.9C167.9 417.9 168.2 420.2 169.9 422.1C171.5 423.7 173.8 424.4 175.1 423.1C176.4 422.1 176.1 419.8 174.4 417.9C172.8 416.3 170.5 415.6 169.2 416.9zM158.4 408.8C157.7 410.1 158.7 411.7 160.7 412.7C162.3 413.7 164.3 413.4 165 412C165.7 410.7 164.7 409.1 162.7 408.1C160.7 407.5 159.1 407.8 158.4 408.8zM190.8 444.4C189.2 445.7 189.8 448.7 192.1 450.6C194.4 452.9 197.3 453.2 198.6 451.6C199.9 450.3 199.3 447.3 197.3 445.4C195.1 443.1 192.1 442.8 190.8 444.4zM179.4 429.7C177.8 430.7 177.8 433.3 179.4 435.6C181 437.9 183.7 438.9 185 437.9C186.6 436.6 186.6 434 185 431.7C183.6 429.4 181 428.4 179.4 429.7z"/></svg>
-                    Blob Explorer on GitHub
-                </a>
+            <div class="help-tab-content" id="tab-about" role="tabpanel" aria-labelledby="helpTabAbout">
+                <p class="help-intro">Blob Explorer turns a public Azure Blob Storage container into a browsable file portal. One Docker container, no account, no credentials — just a URL.</p>
+                <h3 class="help-section-title">Advanced search</h3>
+                <p class="help-intro">Search runs across the whole container from any folder, matching the full path (folders and file name together), case-insensitively. Five styles:</p>
+                <dl class="search-guide">
+                    <dt>smart client</dt>
+                    <dd>Plain text — any substring of the path. Spaces are ignored, so <code>smartclient</code> still matches “Smart Client”.</dd>
+                    <dt>*.exe</dt>
+                    <dd>Wildcards — <code>*</code> matches any run of characters, <code>?</code> a single one. Used when the query contains <code>*</code> or <code>?</code>, e.g. <code>hotfix?</code>, <code>20?? R?*/*.exe</code>.</dd>
+                    <dt>^…</dt>
+                    <dd>Regex — start the query with <code>^</code> and everything after it is a JavaScript regex, e.g. <code>^XProtect Smart Client/Versions/2026.*\.exe$</code>. The <code>^</code> itself is part of the pattern, so it anchors at the start of the path.</dd>
+                    <dt>/…</dt>
+                    <dd>The same regex mode with a leading slash — the first <code>/</code> is stripped and the rest is the pattern (write no closing slash), e.g. <code>/\.exe$</code>. If a regex fails to compile, the query falls back to a plain text search.</dd>
+                    <dt>~sofilnt</dt>
+                    <dd>Fuzzy — the characters must appear in order, gaps allowed, so <code>sofilnt</code> finds “some file name.txt”. Best-scoring matches come first; <code>~~</code> searches for a literal leading tilde. (Pinned pattern favorites stay regex-based; fuzzy applies to typed and pinned <em>search</em> queries.)</dd>
+                </dl>
+                <ul class="about-list">
+                    <li>Pinned views (folders and searches) live in your browser, not the server.</li>
+                    <li>Self-host it: <code>docker run -e BASE_URL=… ghcr.io/joshooaj/blobexplorer</code></li>
+                </ul>
+                <div class="help-footer">
+                    <a href="https://github.com/joshooaj/blobexplorer" target="_blank" rel="noopener">
+                        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 14 14 6M14 6h-5M14 6v5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        GitHub — joshooaj/blobexplorer
+                    </a>
+                </div>
             </div>
         </div>
     </div>
 
-    <button id="backToTop" class="back-to-top" aria-label="Back to top" title="Back to top">↑</button>
+    <button id="backToTop" class="back-to-top" aria-label="Back to top" title="Back to top">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 15.5V5M5 9.7 10 4.5l5 5.2" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
 
     <script src="app.js"></script>
 </body>

@@ -29,6 +29,7 @@ services:
       # - LOGO_FILE=my-logo.svg
       # Optional: Allow users to browse any Azure Blob Storage URL via settings
       # - ALLOW_CUSTOM_URL=true
+      # - SHOW_FOLDERS_NAV=true   # Add the full folder tree to the sidebar
       # Optional: Update interval in seconds (default: 86400 = 24 hours)
       # - UPDATE_INTERVAL=86400
       - TZ=UTC

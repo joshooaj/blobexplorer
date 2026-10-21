@@ -14,34 +14,30 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/joshooaj/blobexplorer" alt="License" /></a>
 </p>
 
----
-
 ## Demo
 
-Visit [blobexplorer.joshooaj.com](https://blobexplorer.joshooaj.com) to see what an Azure storage container looks like.
+[blobexplorer.joshooaj.com](https://blobexplorer.joshooaj.com) browses a live Azure storage container.
 
-For a more interesting storage container, click the settings "gear" icon at the top and enter your own URL. If you use a search engine with the query `inurl:"blob.core.windows.net/"` you might find some storage containers with anonymous access enabled.
+To browse a different container, click "Open another container" at the top and enter its URL. You can find public containers with a search engine query like `inurl:"blob.core.windows.net/"`; a container only works if its owner enabled anonymous read access.
 
-## Features
+## What it does
 
-- **Fast Navigation** — Hierarchical folder tree with O(1) lookups for 100K+ files
-- **Powerful Search** — Instant search with wildcard and regex support
-- **Favorites** — Pin folders or searches for quick access
-- **File Type Filtering** — Filter by installers, PDFs, ZIPs, and more
-- **Dark Mode** — Automatic theme detection with manual toggle
-- **Responsive** — Desktop and mobile friendly
-- **Accessible** — Keyboard navigation, screen reader support, skip links
-- **Self-Contained** — No external dependencies; all assets self-hosted
-- **Smart Caching** — Server-side and browser-side (IndexedDB) caching for fast loads
-- **Analytics Ready** — Hook into any analytics provider via custom events
+- Folder tree navigation backed by O(1) lookups, built for containers with 100K+ files.
+- One continuous scroll. Windowed rendering puts only visible rows in the DOM, so large containers scroll smoothly without pagination.
+- Instant search with wildcards, regex, and fuzzy matching (`~text`).
+- Pin folders, files, or searches as favorites.
+- Filter by file type: installers, PDFs, ZIPs, and more.
+- Explorer behavior: single-click selects, double-click downloads, sortable columns, a details pane, and list and tiles views. Folders show their recursive size and the modification date of their newest file. Size and date sorts keep folders and files in separate groups, like Windows 11.
+- Light and dark themes follow the system, with a manual toggle.
+- Works on mobile. Touch devices get single-tap open, always-visible actions, and file names wrapped onto two lines instead of revealed on hover.
+- Keyboard navigation, screen reader support, and skip links.
+- No external dependencies; all assets are self-hosted.
+- The server caches the blob list and the browser caches it in IndexedDB, so repeat loads are instant.
+- Bring your own analytics: the site fires custom DOM events your script can listen to.
 
----
+## Getting started
 
-## Getting Started
-
-You can run Blob Explorer two ways:
-
-### Option 1: Pull from Docker Hub
+### Pull the image
 
 Create a `docker-compose.yaml`:
 
@@ -67,7 +63,7 @@ volumes:
 docker compose up -d
 ```
 
-### Option 2: Clone and Build
+### Build from source
 
 ```bash
 git clone https://github.com/joshooaj/blobexplorer.git
@@ -89,29 +85,28 @@ services:
 docker compose up -d --build
 ```
 
-Then open **http://localhost:8080** in your browser.
-
----
+Open <http://localhost:8080>.
 
 ## Configuration
 
-### Environment Variables
+### Environment variables
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `BASE_URL` | **Yes** | — | Azure Blob Storage container URL |
-| `DOWNLOAD_BASE` | No | Same as `BASE_URL` | Alternative download URL (e.g., CDN or Front Door) |
-| `SITE_TITLE` | No | `Blob Explorer` | Title shown in header and browser tab |
+| `BASE_URL` | Yes | | Azure Blob Storage container URL |
+| `DOWNLOAD_BASE` | No | Same as `BASE_URL` | Alternate download URL, e.g. a CDN or Front Door |
+| `SITE_TITLE` | No | `Blob Explorer` | Title shown in the header and browser tab |
 | `SITE_DESCRIPTION` | No | `Browse and download files...` | Meta description |
 | `LOGO_URL` | No | Default logo | URL to a custom logo image |
-| `LOGO_FILE` | No | — | Path to a logo file relative to `/config` (e.g., `my-logo.svg`) |
-| `UPDATE_INTERVAL` | No | `86400` | Seconds between blob list refreshes (default: 24h) |
-| `ALLOW_CUSTOM_URL` | No | `false` | Allow users to browse any blob storage URL via settings |
-| `TZ` | No | `UTC` | Timezone for timestamps |
+| `LOGO_FILE` | No | | Path to a logo file relative to `/config`, e.g. `my-logo.svg` |
+| `UPDATE_INTERVAL` | No | `86400` | Seconds between blob list refreshes |
+| `ALLOW_CUSTOM_URL` | No | `false` | Let visitors browse other blob storage URLs from settings |
+| `SHOW_FOLDERS_NAV` | No | `false` | Show the full folder tree in the navigation sidebar |
+| `TZ` | No | `UTC` | Container timezone; affects only `docker logs` timestamps. The web UI always renders times in the visitor's browser timezone |
 
-### Config File
+### Config file
 
-On first run, a default `config.json` is created in your `/config` volume. Edit it to customize favorites, analytics, and more. Environment variables take precedence over config file values.
+On first run the container writes a default `config.json` to the `/config` volume. Edit it to set favorites, analytics, and the other site options. Environment variables override config file values. `config.schema.json` gives editors autocompletion and validation.
 
 ```json
 {
@@ -119,6 +114,7 @@ On first run, a default `config.json` is created in your `/config` volume. Edit 
   "siteTitle": "My Downloads",
   "siteDescription": "Browse and download files",
   "logoUrl": "",
+  "showFoldersNav": false,
   "analyticsScript": "analytics.html",
   "favorites": [
     {
@@ -142,17 +138,15 @@ On first run, a default `config.json` is created in your `/config` volume. Edit 
 }
 ```
 
-A `config.schema.json` is included for editor autocompletion and validation.
+Favorite types:
 
-#### Favorite Types
-
-| Type | Description | Required Fields |
+| Type | Description | Required fields |
 |------|-------------|-----------------|
 | `folder` | Navigate to a folder path | `path` |
 | `search` | Run a regex search query | `query` |
 | `pattern` | Auto-match folders by regex | `pattern`, optional `limit` and `sortOrder` |
 
-### Reverse Proxy (Traefik)
+### Reverse proxy (Traefik)
 
 ```yaml
 services:
@@ -171,28 +165,44 @@ networks:
     external: true
 ```
 
----
+## Keyboard shortcuts
+
+| Key | Action |
+|-----|--------|
+| `↑` / `↓` or `j` / `k` | Move between items |
+| `Enter` or `l` | Open the selected folder |
+| `h` or `Backspace` | Go up one level |
+| `PageUp` / `PageDown` | Scroll a page |
+| `Home` / `End` | Jump to first / last item |
+| `,` then `a` / `e` / `m` / `s` | Sort; uppercase reverses |
+| `/` | Focus search; `Enter` commits and returns to the list |
+| `Ctrl` + `C` | Copy the selected file's link |
+| `Ctrl` + `P` | Pin the current view |
+| `Ctrl` + `B` | Toggle the navigation pane |
+| `Esc` | Clear the search or close a dialog |
+| `?` | Open the help dialog |
 
 ## Analytics
 
-Blob Explorer dispatches custom events that you can hook into with any analytics provider.
+Blob Explorer fires custom DOM events. Host a script in your config folder and listen to them.
 
 ### Setup
 
-1. Create an analytics file in your config folder
-2. Reference it in `config.json`:
+1. Create an analytics file in your config folder.
+2. Point `analyticsScript` at it in `config.json`:
 
 ```json
 { "analyticsScript": "analytics.html" }
 ```
 
-**File formats:**
-- `.js` — plain JavaScript, auto-wrapped in `<script>` tags
-- `.html` — injected as-is (use when loading external scripts via `<script src="...">`)
+File formats:
+
+- `.js`: plain JavaScript, wrapped in `<script>` tags
+- `.html`: injected as-is, for loading external scripts via `<script src="...">`
 
 ### Events
 
-| Event | Detail Properties |
+| Event | Detail properties |
 |-------|-------------------|
 | `blob-explorer:page-view` | `path`, `url`, `timestamp` |
 | `blob-explorer:search` | `query`, `resultCount`, `timestamp` |
@@ -205,7 +215,7 @@ Blob Explorer dispatches custom events that you can hook into with any analytics
 | `blob-explorer:custom-url-load` | `host`, `container`, `blobCount`, `timestamp` |
 
 <details>
-<summary><strong>Example: Google Analytics 4</strong></summary>
+<summary>Example: Google Analytics 4</summary>
 
 Create `./config/analytics.html`:
 
@@ -238,7 +248,7 @@ Create `./config/analytics.html`:
 </details>
 
 <details>
-<summary><strong>Example: Plausible</strong></summary>
+<summary>Example: Plausible</summary>
 
 Create `./config/analytics.html`:
 
@@ -271,7 +281,7 @@ Create `./config/analytics.html`:
 </details>
 
 <details>
-<summary><strong>Example: Simple Event Logging</strong></summary>
+<summary>Example: simple event logging</summary>
 
 Create `./config/analytics.js`:
 
@@ -285,42 +295,38 @@ document.addEventListener('blob-explorer:search', (e) => {
 });
 ```
 
-Plain `.js` files are automatically wrapped in `<script>` tags.
+Plain `.js` files are wrapped in `<script>` tags automatically.
 
 </details>
-
----
 
 ## Architecture
 
 Blob Explorer runs as a single Docker container:
 
-1. **nginx** serves the static site on port 8080
-2. A **background updater** periodically fetches the blob list from Azure Storage
-3. **Runtime config** is generated from `config.json` + environment variables at startup
-4. **Cached data** in `/cache` enables instant startup on container restart
+1. nginx serves the static site on port 8080.
+2. A background updater fetches the blob list from Azure Storage on the `UPDATE_INTERVAL` schedule.
+3. The entrypoint generates runtime config from `config.json` and environment variables at startup.
+4. Cached data in `/cache` lets the container start instantly after a restart.
 
 ### Volumes
 
-| Mount Point | Purpose |
+| Mount point | Purpose |
 |-------------|---------|
-| `/config` | Configuration (`config.json`, logos, analytics scripts) |
+| `/config` | Configuration: `config.json`, logos, analytics scripts |
 | `/cache` | Blob data cache for fast startup |
 
-### How It Works
+### Startup sequence
 
-1. On startup, the container creates `/config/config.json` from defaults if missing
-2. ENV vars are merged with config file values (ENV takes precedence)
-3. Cached blob data in `/cache` is served immediately while stale data refreshes in the background
-4. The browser caches data in IndexedDB for fast subsequent page loads
-5. The blob list refreshes automatically based on `UPDATE_INTERVAL`
-
----
+1. The entrypoint writes a default `/config/config.json` if one is missing.
+2. It merges environment variables with config file values. Environment variables win.
+3. The site serves cached blob data from `/cache` immediately and refreshes stale data in the background.
+4. The browser caches data in IndexedDB for fast subsequent page loads.
+5. The blob list refreshes on the `UPDATE_INTERVAL` schedule.
 
 ## Requirements
 
-- Public Azure Blob Storage container with anonymous access level set to "Container"
-- Docker, podman, or whatever your container tool of choice is
+- A public Azure Blob Storage container with anonymous access set to "Container"
+- Docker, podman, or any container runtime; the examples use docker compose
 
 ## License
 

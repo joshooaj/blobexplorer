@@ -26,6 +26,7 @@
     --ok: #0e7c0b;
     --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.05), 0 4px 14px rgba(0, 0, 0, 0.04);
     --shadow-flyout: 0 2px 4px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.10);
+    --scrim: rgba(0, 0, 0, 0.45);     /* modal + drawer scrim */
     --radius-card: 8px;
     --radius-ctl: 4px;
     --row-h: 32px;
@@ -55,6 +56,7 @@ html[data-theme='dark'] {
     --ok: #91c88e;
     --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 4px 14px rgba(0, 0, 0, 0.25);
     --shadow-flyout: 0 2px 4px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.5);
+    --scrim: rgba(0, 0, 0, 0.6);
 }
 
 * { box-sizing: border-box; }
@@ -123,7 +125,7 @@ kbd {
     font-size: 12px;
     border: 1px solid var(--border-strong);
     border-bottom-width: 2px;
-    border-radius: 3px;
+    border-radius: var(--radius-ctl);
     padding: 1px 6px;
     background: var(--surface);
     color: var(--text);
@@ -137,7 +139,7 @@ button { font-family: inherit; }
 :focus-visible {
     outline: 2px solid var(--focus);
     outline-offset: 1px;
-    border-radius: 2px;
+    border-radius: var(--radius-ctl);
 }
 
 /* ==========================================================================
@@ -282,7 +284,7 @@ html[data-theme='dark'] #darkModeToggle .ico-sun { display: block; }
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 3px;
+    border-radius: var(--radius-ctl);
     padding: 0;
     z-index: 1;
 }
@@ -411,7 +413,7 @@ html[data-theme='dark'] #darkModeToggle .ico-sun { display: block; }
     gap: 2px;
     height: 24px;
     padding: 0 8px;
-    border-radius: 3px;
+    border-radius: var(--radius-ctl);
     font-size: 13px;
     cursor: pointer;
     white-space: nowrap;
@@ -470,7 +472,7 @@ html[data-theme='dark'] #darkModeToggle .ico-sun { display: block; }
     display: none;
     align-items: center;
     justify-content: center;
-    border-radius: 3px;
+    border-radius: var(--radius-ctl);
     padding: 0;
 }
 #clearSearch:hover { background: var(--hover-strong); color: var(--text); }
@@ -518,14 +520,13 @@ html[data-theme='dark'] #darkModeToggle .ico-sun { display: block; }
     padding: 0 10px;
     background: transparent;
     border: 0;
-    border-radius: 3px;
+    border-radius: var(--radius-ctl);
     color: var(--text-2);
     font-size: 13px;
     cursor: pointer;
 }
 .seg-btn:hover { background: var(--hover); color: var(--text); }
 .seg-btn.active { background: var(--surface-2); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
-.seg-btn.active::after { content: none; }
 .seg-btn svg { width: 15px; height: 15px; }
 
 .view-tools { flex: none; display: flex; gap: 2px; width: var(--right-col); }
@@ -627,7 +628,7 @@ html[data-theme='dark'] #darkModeToggle .ico-sun { display: block; }
     color: var(--text-2);
     background: none;
     border: 0;
-    border-radius: 3px;
+    border-radius: var(--radius-ctl);
     padding: 3px 6px;
     display: inline-flex;
     align-items: center;
@@ -700,7 +701,7 @@ html[data-theme='dark'] #darkModeToggle .ico-sun { display: block; }
     cursor: pointer;
 }
 .m-path:hover { color: var(--accent); text-decoration: underline; }
-.m-path:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 1px; border-radius: 2px; }
+.m-path:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 1px; border-radius: var(--radius-ctl); }
 
 .m-date, .m-type {
     font-size: 13px;
@@ -730,7 +731,7 @@ html[data-theme='dark'] #darkModeToggle .ico-sun { display: block; }
     justify-content: center;
     background: transparent;
     border: 0;
-    border-radius: 3px;
+    border-radius: var(--radius-ctl);
     color: var(--text-2);
     cursor: pointer;
     padding: 0;
@@ -880,7 +881,7 @@ html[data-theme='dark'] #darkModeToggle .ico-sun { display: block; }
     position: fixed;
     inset: 0;
     z-index: 90;
-    background: rgba(0, 0, 0, 0.45);
+    background: var(--scrim);
     display: none;
     /* A dialog taller than the viewport scrolls with the overlay, so no
        content sits unreachable below the fold on short screens. */
@@ -888,7 +889,6 @@ html[data-theme='dark'] #darkModeToggle .ico-sun { display: block; }
     overscroll-behavior: contain;
     padding: 20px;
 }
-html[data-theme='dark'] .modal-overlay { background: rgba(0, 0, 0, 0.6); }
 .modal-overlay.active { display: flex; }
 
 .modal-content {
@@ -1015,7 +1015,7 @@ html[data-theme='dark'] .modal-overlay { background: rgba(0, 0, 0, 0.6); }
     background: var(--surface-2);
     border: 1px solid var(--border);
     padding: 0 5px;
-    border-radius: 3px;
+    border-radius: var(--radius-ctl);
 }
 .help-section-title { margin: 20px 0 6px; font-size: 15px; font-weight: 600; }
 .search-guide {
@@ -1032,7 +1032,7 @@ html[data-theme='dark'] .modal-overlay { background: rgba(0, 0, 0, 0.6); }
     background: var(--surface-2);
     border: 1px solid var(--border);
     padding: 1px 6px;
-    border-radius: 3px;
+    border-radius: var(--radius-ctl);
     white-space: nowrap;
 }
 .search-guide dd { margin: 0; font-size: 13.5px; }
@@ -1042,7 +1042,7 @@ html[data-theme='dark'] .modal-overlay { background: rgba(0, 0, 0, 0.6); }
     background: var(--surface-2);
     border: 1px solid var(--border);
     padding: 0 5px;
-    border-radius: 3px;
+    border-radius: var(--radius-ctl);
 }
 
 .help-tab-content { display: none; }
@@ -1124,7 +1124,7 @@ html[data-theme='dark'] .modal-overlay { background: rgba(0, 0, 0, 0.6); }
         position: fixed;
         inset: 0;
         z-index: 75;
-        background: rgba(0, 0, 0, 0.4);
+        background: var(--scrim);
     }
     .sidebar-overlay.active { display: block; }
     .keyboard-shortcuts { grid-template-columns: 1fr; }

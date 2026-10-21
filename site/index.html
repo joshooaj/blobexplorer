@@ -199,7 +199,7 @@
             <button id="pinModalClose" class="modal-close" aria-label="Close">
                 <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5.5 5.5 9 9M14.5 5.5l-9 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
             </button>
-            <h2 id="pinModalTitle">Pin to Quick access</h2>
+            <h2 id="pinModalTitle">Pin current view</h2>
             <p class="pin-type-indicator" id="pinTypeIndicator"></p>
             <div class="pin-form">
                 <label for="pinNameInput">Name</label>
@@ -281,15 +281,15 @@
                 <p class="help-intro">Search runs across the whole container from any folder, matching the full path (folders and file name together), case-insensitively. Five styles:</p>
                 <dl class="search-guide">
                     <dt>smart client</dt>
-                    <dd>Plain text — any substring of the path. Spaces are ignored, so <code>smartclient</code> still matches “Smart Client”.</dd>
+                    <dd>Plain text: any substring of the path. Spaces are ignored, so <code>smartclient</code> still matches “Smart Client”.</dd>
                     <dt>*.exe</dt>
-                    <dd>Wildcards — <code>*</code> matches any run of characters, <code>?</code> a single one. Used when the query contains <code>*</code> or <code>?</code>, e.g. <code>hotfix?</code>, <code>20?? R?*/*.exe</code>.</dd>
+                    <dd>Wildcards: <code>*</code> matches any run of characters, <code>?</code> a single one. Used when the query contains <code>*</code> or <code>?</code>, e.g. <code>hotfix?</code>, <code>20?? R?*/*.exe</code>.</dd>
                     <dt>^…</dt>
-                    <dd>Regex — start the query with <code>^</code> and everything after it is a JavaScript regex, e.g. <code>^XProtect Smart Client/Versions/2026.*\.exe$</code>. The <code>^</code> itself is part of the pattern, so it anchors at the start of the path.</dd>
+                    <dd>Regex: start the query with <code>^</code> and everything after it is a JavaScript regex, e.g. <code>^XProtect Smart Client/Versions/2026.*\.exe$</code>. The <code>^</code> itself is part of the pattern, so it anchors at the start of the path.</dd>
                     <dt>/…</dt>
-                    <dd>The same regex mode with a leading slash — the first <code>/</code> is stripped and the rest is the pattern (write no closing slash), e.g. <code>/\.exe$</code>. If a regex fails to compile, the query falls back to a plain text search.</dd>
+                    <dd>Also regex, with a leading slash: the first <code>/</code> is stripped and the rest is the pattern (write no closing slash), e.g. <code>/\.exe$</code>. If a regex fails to compile, the query falls back to a plain text search.</dd>
                     <dt>~sofilnt</dt>
-                    <dd>Fuzzy — the characters must appear in order, gaps allowed, so <code>sofilnt</code> finds “some file name.txt”. Best-scoring matches come first; <code>~~</code> searches for a literal leading tilde. (Pinned pattern favorites stay regex-based; fuzzy applies to typed and pinned <em>search</em> queries.)</dd>
+                    <dd>Fuzzy: the characters must appear in order, gaps allowed, so <code>sofilnt</code> finds “some file name.txt”. Best-scoring matches come first; <code>~~</code> searches for a literal leading tilde. (Pinned pattern favorites stay regex-based; fuzzy applies to typed and pinned <em>search</em> queries.)</dd>
                 </dl>
                 <ul class="about-list">
                     <li>Pinned views (folders and searches) live in your browser, not the server.</li>

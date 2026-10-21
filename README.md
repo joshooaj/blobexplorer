@@ -27,7 +27,7 @@ To browse a different container, click "Open another container" at the top and e
 - Instant search with wildcards, regex, and fuzzy matching (`~text`).
 - Pin folders, files, or searches as favorites.
 - Filter by file type: installers, PDFs, ZIPs, and more.
-- Explorer behavior: single-click selects, double-click downloads, sortable columns, a details pane, and list and tiles views. Folders show their recursive size and the modification date of their newest file. Size and date sorts keep folders and files in separate groups, like Windows 11.
+- Explorer behavior: single-click selects, double-click downloads, sortable columns, a details pane, and list and tiles views. New visitors start sorted A to Z by name; the chosen column and direction persist in the visitor's browser for the next visit. Folders show their recursive size and the modification date of their newest file. Size and date sorts keep folders and files in separate groups, like Windows 11.
 - Light and dark themes follow the system, with a manual toggle.
 - Works on mobile. Touch devices get single-tap open, always-visible actions, and file names wrapped onto two lines instead of revealed on hover.
 - Keyboard navigation, screen reader support, and skip links.

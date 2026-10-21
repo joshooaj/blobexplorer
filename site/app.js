@@ -18,7 +18,22 @@ let fileTypeCache = new Map(); // Cache file type info to avoid repeated calcula
 let folderSizes = new Map(); // path -> recursive total bytes of all blobs under that prefix
 let folderDates = new Map(); // path -> newest LastModified (ms) among all blobs under that prefix (recursive)
 
-// ============================================================================
+// Escape text interpolated into innerHTML. Container names (folders, file
+// names, URLs) are untrusted input: the product deliberately browses public
+// containers its operators have never seen, so every blob-derived string
+// rendered via a template must pass through esc() first.
+function esc(s) {
+    return String(s).replace(/[&<>"']/g, c => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+}
+
+// The typed query as entered (the lowercase searchTerm drives matching;
+// messages echo what the visitor actually wrote).
+function searchInputRaw() {
+    return document.getElementById('searchInput').value.trim();
+}
+
 // Analytics Events API
 // ============================================================================
 // Dispatches custom events that external analytics scripts can listen to.
@@ -289,8 +304,7 @@ async function fetchMetadata(updateUI = true) {
             }
             return metadata;
         }
-    } catch (error) {
-        console.log('Could not fetch metadata:', error);
+    } catch {
     }
     return null;
 }
@@ -337,26 +351,21 @@ async function loadData() {
     try {
         // Fetch metadata first to check if server data is newer than cache
         loadingEl.innerHTML = '<div class="loading">Checking for updates...</div>';
-        console.log('Fetching metadata...');
         const metadata = await fetchMetadata(true);
         const serverLastUpdated = metadata && metadata.lastUpdated ? new Date(metadata.lastUpdated).getTime() : null;
         
         // Try to load from cache, but only if it matches the server's last update
-        console.log('Checking cache...');
         const cached = await getCachedData();
         if (cached && cached.downloads && cached.downloads.length > 0) {
             const cacheIsStale = serverLastUpdated && (!cached.serverLastUpdated || cached.serverLastUpdated < serverLastUpdated);
             
             if (!cacheIsStale) {
-                console.log('Loading from cache:', cached.downloads.length, 'items (cache is current)');
                 loadingEl.innerHTML = '<div class="loading">Loading from cache...</div>';
                 allDownloads = prepareDownloads(cached.downloads);
                 filteredDownloads = [...allDownloads];
                 
                 // Build optimized data structures
-                console.log('Building folder tree and caching file types...');
                 buildFolderTree();
-                console.log('Folder tree built with', folderTree.size, 'nodes');
                 renderFolderNav();
                 if (cached.timestamp) {
                     const lu = document.getElementById('lastUpdated');
@@ -371,13 +380,7 @@ async function loadData() {
                 displayDownloads();
                 return;
             }
-            
-            console.log('Cache is stale (server updated at', new Date(serverLastUpdated).toISOString(), '), refreshing...');
-        } else {
-            console.log('No cache found');
         }
-        
-        console.log('Fetching JSON...');
         loadingEl.innerHTML = '<div class="loading">Downloading the container listing…</div>';
         
         // Load directly - more reliable than Web Worker
@@ -386,36 +389,27 @@ async function loadData() {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         
-        console.log('Fetched, reading text...');
         loadingEl.innerHTML = '<div class="loading">Processing data... Please wait.</div>';
         
         const text = await response.text();
-        console.log('Text loaded, size:', (text.length / 1024 / 1024).toFixed(2), 'MB');
         
         loadingEl.innerHTML = '<div class="loading">Parsing JSON... Almost done.</div>';
         
         const downloads = JSON.parse(text);
-        console.log('Parsed successfully:', downloads.length, 'items');
         
         allDownloads = prepareDownloads(downloads);
         filteredDownloads = [...allDownloads];
         
         // Build optimized data structures
-        console.log('Building folder tree and caching file types...');
         buildFolderTree();
-        console.log('Folder tree built with', folderTree.size, 'nodes');
         renderFolderNav();
         
         // Cache the data with the server's lastUpdated timestamp for future freshness checks
-        console.log('Caching data...');
         await cacheData({ downloads, timestamp: Date.now(), serverLastUpdated: serverLastUpdated || Date.now() });
-        console.log('Data cached');
         
-        console.log('Initializing UI...');
         initializeFilters();
         renderFavorites();
         displayDownloads();
-        console.log('Done!');
         
     } catch (error) {
         console.error('Error loading downloads:', error);
@@ -495,7 +489,6 @@ function getFileTypeInfo(download) {
     }
     
     const ext = getFileExtension(download.Url);
-    const contentType = download.ContentType || '';
     
     // Material Design style SVG icons
     const icons = {
@@ -521,23 +514,23 @@ function getFileTypeInfo(download) {
         'htm': { icon: icons.web, name: 'HTML', color: '#1976d2' },
         'html': { icon: icons.web, name: 'HTML', color: '#1976d2' },
         'txt': { icon: icons.txt, name: 'Text', color: '#666' },
-        'exe': { icon: icons.installer, name: 'Installer', stamp: 'SETUP', color: '#00897b' },
-        'msi': { icon: icons.installer, name: 'Installer', stamp: 'SETUP', color: '#00897b' },
+        'exe': { icon: icons.installer, name: 'Installer', color: '#00897b' },
+        'msi': { icon: icons.installer, name: 'Installer', color: '#00897b' },
         'iso': { icon: icons.iso, name: 'ISO', color: '#5e35b1' },
         'xml': { icon: icons.xml, name: 'XML', color: '#f57c00' },
         'json': { icon: icons.json, name: 'JSON', color: '#388e3c' },
         'dll': { icon: icons.dll, name: 'DLL', color: '#455a64' },
-        'cer': { icon: icons.cert, name: 'Certificate', stamp: 'CERT', color: '#c62828' },
+        'cer': { icon: icons.cert, name: 'Certificate', color: '#c62828' },
         'jpg': { icon: icons.image, name: 'Image', color: '#e91e63' },
         'jpeg': { icon: icons.image, name: 'Image', color: '#e91e63' },
         'png': { icon: icons.image, name: 'Image', color: '#e91e63' },
         'gif': { icon: icons.image, name: 'Image', color: '#e91e63' },
         'doc': { icon: icons.word, name: 'Word', color: '#1565c0' },
         'docx': { icon: icons.word, name: 'Word', color: '#1565c0' },
-        'db': { icon: icons.database, name: 'Database', stamp: 'DB', color: '#6d4c41' },
+        'db': { icon: icons.database, name: 'Database', color: '#6d4c41' },
     };
     
-    const result = typeMap[ext] || { icon: icons.file, name: ext.toUpperCase(), stamp: ext.toUpperCase().slice(0, 7), color: '#757575' };
+    const result = typeMap[ext] || { icon: icons.file, name: ext.toUpperCase(), color: '#757575' };
     
     // Cache the result
     fileTypeCache.set(download.Url, result);
@@ -588,21 +581,21 @@ function createDownloadItemElement(download, showPath = false) {
     if (showPath) {
         folderPath = download.Name.split('/').slice(0, -1).join('/');
         const folderLabel = folderPath ? folderPath : 'the root folder';
-        pathHtml = `<button type="button" class="m-path" title="Open ${folderLabel}">${folderPath ? '/' + folderPath : '/'}</button>`;
+        pathHtml = `<button type="button" class="m-path" title="Open ${esc(folderLabel)}">${folderPath ? esc('/' + folderPath) : '/'}</button>`;
     }
 
     itemEl.innerHTML = `
         <span class="m-name">
             <span class="m-icon" style="color:${typeInfo.color}">${typeInfo.icon}</span>
-            ${pathHtml}<span class="m-name-text">${fileName}</span>
+            ${pathHtml}<span class="m-name-text">${esc(fileName)}</span>
             <span class="sr-only">${typeInfo.name}, ${formatFileSize(download.Length)}, modified ${formatDate(download.LastModified)}.</span>
         </span>
         <span class="m-date" aria-hidden="true">${formatDate(download.LastModified)}</span>
-        <span class="m-type" aria-hidden="true">${typeInfo.name}</span>
+        <span class="m-type" aria-hidden="true">${esc(typeInfo.name)}</span>
         <span class="m-size">${formatFileSize(download.Length)}</span>
         <span class="m-act">
-            <button class="copy-link-button" data-url="${download.Url}" data-path="${download.Name}" aria-label="Copy link for ${fileName}" title="Copy link">${FL.copy}</button>
-            <button class="download-button" data-path="${download.Name}" data-url="${download.Url}" aria-label="Download ${fileName}" title="Download">${FL.download}</button>
+            <button class="copy-link-button" data-url="${esc(download.Url)}" data-path="${esc(download.Name)}" aria-label="Copy link for ${esc(fileName)}" title="Copy link">${FL.copy}</button>
+            <button class="download-button" data-path="${esc(download.Name)}" data-url="${esc(download.Url)}" aria-label="Download ${esc(fileName)}" title="Download">${FL.download}</button>
         </span>
     `;
 
@@ -936,7 +929,7 @@ function renderFavorites() {
                 searchEl.classList.add('active');
             }
             
-            searchEl.innerHTML = `<span class="icon-search" aria-hidden="true"></span> ${favorite.displayName || favorite.label || 'Search'}`;
+            searchEl.innerHTML = `<span class="icon-search" aria-hidden="true"></span> ${esc(favorite.displayName || favorite.label || 'Search')}`;
             makeKeyboardAccessible(searchEl, () => {
                 const searchInput = document.getElementById('searchInput');
                 if (searchInput) {
@@ -971,7 +964,7 @@ function renderFavorites() {
                 folderEl.classList.add('active');
             }
             
-            folderEl.innerHTML = `<span class="icon-folder" aria-hidden="true"></span> ${folderName}`;
+            folderEl.innerHTML = `<span class="icon-folder" aria-hidden="true"></span> ${esc(folderName)}`;
             makeKeyboardAccessible(folderEl, () => {
                 navigateToPath(pathArray);
             });
@@ -1006,7 +999,7 @@ function renderFavorites() {
                         folderEl.classList.add('active');
                     }
                     
-                    folderEl.innerHTML = `<span class="icon-star" aria-hidden="true"></span> ${folderName}`;
+                    folderEl.innerHTML = `<span class="icon-star" aria-hidden="true"></span> ${esc(folderName)}`;
                     makeKeyboardAccessible(folderEl, () => {
                         navigateToPath(pathArray);
                     });
@@ -1049,8 +1042,8 @@ function renderUserFavorites(container) {
         
         const iconClass = fav.type === 'search' ? 'icon-search' : 'icon-pin';
         itemEl.innerHTML = `
-            <span class="user-favorite-name" tabindex="0" role="button"><span class="${iconClass}" aria-hidden="true"></span> ${fav.name}</span>
-            <button class="user-favorite-edit" data-id="${fav.id}" title="Edit" aria-label="Edit ${fav.name}"><span class="icon-edit" aria-hidden="true"></span></button>
+            <span class="user-favorite-name" tabindex="0" role="button"><span class="${iconClass}" aria-hidden="true"></span> ${esc(fav.name)}</span>
+            <button class="user-favorite-edit" data-id="${fav.id}" title="Edit" aria-label="Edit ${esc(fav.name)}"><span class="icon-edit" aria-hidden="true"></span></button>
         `;
         
         // Click to navigate (with keyboard support)
@@ -1088,7 +1081,7 @@ function renderUserFavorites(container) {
     // Add "Save current view" button
     const addPinEl = document.createElement('div');
     addPinEl.className = 'favorite-item add-pin-item';
-    addPinEl.innerHTML = `${FL.open} Pin current view…`;
+    addPinEl.innerHTML = `<span class="icon-pin" aria-hidden="true"></span> Pin current view…`;
     makeKeyboardAccessible(addPinEl, openPinForCurrentView);
     container.appendChild(addPinEl);
 }
@@ -1108,10 +1101,10 @@ function openPinModal(mode, data) {
     modal.dataset.path = data.path ? JSON.stringify(data.path) : '';
     
     if (mode === 'add') {
-        titleEl.textContent = 'Pin to Favorites';
+        titleEl.textContent = 'Pin current view';
         deleteBtn.style.display = 'none';
     } else {
-        titleEl.textContent = 'Edit Pin';
+        titleEl.textContent = 'Edit pin';
         deleteBtn.style.display = 'inline-block';
     }
     
@@ -1199,11 +1192,11 @@ function savePinFromModal() {
             favorite.path = JSON.parse(modal.dataset.path);
         }
         addUserFavorite(favorite);
-        showToast('Pinned to favorites!');
+        showToast('Pinned');
     } else {
         const id = parseInt(modal.dataset.editId, 10);
         updateUserFavorite(id, { name });
-        showToast('Pin updated!');
+        showToast('Pin updated');
     }
     
     closePinModal();
@@ -1274,10 +1267,10 @@ function renderBreadcrumbs() {
     const homeCrumb = `<span class="breadcrumb crumb-home" tabindex="0" role="link" data-path="[]" aria-label="Home">${FL.home}<span>Home</span></span>`;
 
     if (searchTerm) {
-        breadcrumbsEl.innerHTML = `${homeCrumb}<span class="breadcrumb search-crumb">Search results for “${searchTerm}”</span>`;
+        breadcrumbsEl.innerHTML = `${homeCrumb}<span class="breadcrumb search-crumb">Search results for “${esc(searchTerm)}”</span>`;
     } else {
         const segs = currentPath.map((seg, i) =>
-            `<span class="breadcrumb" tabindex="0" role="link" data-path='${JSON.stringify(currentPath.slice(0, i + 1))}'>${seg}</span>`
+            `<span class="breadcrumb" tabindex="0" role="link" data-path="${esc(JSON.stringify(currentPath.slice(0, i + 1)))}">${esc(seg)}</span>`
         ).join('');
         breadcrumbsEl.innerHTML = homeCrumb + segs;
     }
@@ -1475,7 +1468,7 @@ function displayDownloads() {
         }
         resultCount.textContent = `${sorted.length.toLocaleString()} result${sorted.length !== 1 ? 's' : ''}`;
         setView(sorted.map(d => ({ type: 'file', data: d })), true,
-            `<div class="no-results">${FL.empty}No results for “${searchTerm}”.</div>`);
+            `<div class="no-results">${FL.empty}No results for “${esc(searchInputRaw())}”.</div>`);
         return;
     }
 
@@ -1566,7 +1559,7 @@ function makeRowEl(item) {
         folderEl.dataset.name = item.name;
         folderEl.title = item.name;
         folderEl.innerHTML = `
-            <span class="m-name"><span class="m-icon">${FL.folder}</span><span class="m-name-text">${item.name}</span></span>
+            <span class="m-name"><span class="m-icon">${FL.folder}</span><span class="m-name-text">${esc(item.name)}</span></span>
             <span class="m-date" aria-hidden="true">${folderDates.has(item.path) ? formatDate(new Date(folderDates.get(item.path)).toISOString()) : '—'}</span>
             <span class="m-type" aria-hidden="true">File folder</span>
             <span class="m-size" aria-hidden="true">${formatFileSize(folderSizes.get(item.path) || 0)}</span>
@@ -1775,12 +1768,12 @@ function renderDetailsPane() {
         const node = folderTree.get(d.path) || { folders: new Set(), files: [] };
         body.innerHTML = `
             <div class="details-ico">${FL.folder}</div>
-            <div class="details-name">${d.name}</div>
+            <div class="details-name">${esc(d.name)}</div>
             <div class="details-type">File folder</div>
             <dl>
                 <div class="detail-row"><dt>Date modified</dt><dd>${folderDates.has(d.path) ? formatDate(new Date(folderDates.get(d.path)).toISOString()) : '—'}</dd></div>
                 <div class="detail-row"><dt>Size</dt><dd>${formatFileSize(folderSizes.get(d.path) || 0)}</dd></div>
-                <div class="detail-row"><dt>Location</dt><dd>${currentPath.length ? '/' + currentPath.join('/') : '/ (root)'}</dd></div>
+                <div class="detail-row"><dt>Location</dt><dd>${esc(currentPath.length ? '/' + currentPath.join('/') : '/ (root)')}</dd></div>
                 <div class="detail-row"><dt>Contains</dt><dd>${node.folders.size} folder${node.folders.size !== 1 ? 's' : ''}, ${node.files.length} file${node.files.length !== 1 ? 's' : ''}</dd></div>
             </dl>
             <div class="detail-actions"><button type="button" id="detailOpen">${FL.open}<span>Open</span></button></div>
@@ -1791,14 +1784,14 @@ function renderDetailsPane() {
         const location = d.path.includes('/') ? '/' + d.path.split('/').slice(0, -1).join('/') : '/ (root)';
         body.innerHTML = `
             <div class="details-ico" style="color:${typeInfo.color}">${typeInfo.icon}</div>
-            <div class="details-name">${d.name}</div>
-            <div class="details-type">${d.type || typeInfo.name}</div>
+            <div class="details-name">${esc(d.name)}</div>
+            <div class="details-type">${esc(d.type || typeInfo.name)}</div>
             <dl>
                 <div class="detail-row"><dt>Date modified</dt><dd>${formatDate(d.date)}</dd></div>
                 <div class="detail-row"><dt>Size</dt><dd>${formatFileSize(Number(d.length))}</dd></div>
-                <div class="detail-row"><dt>Location</dt><dd>${location}</dd></div>
+                <div class="detail-row"><dt>Location</dt><dd>${esc(location)}</dd></div>
             </dl>
-            <div class="detail-url">${d.url}</div>
+            <div class="detail-url">${esc(d.url)}</div>
             <div class="detail-actions">
                 <button type="button" id="detailCopy">${FL.copy}<span>Copy link</span></button>
                 <button type="button" id="detailDownload">${FL.download}<span>Download</span></button>
@@ -2227,7 +2220,7 @@ function initializeSidebar() {
     
     // Close sidebar when navigating on mobile
     sidebar.addEventListener('click', (e) => {
-        if (e.target.closest('.folder-item') || e.target.closest('.favorite-item') || e.target.closest('#homeLink')) {
+        if (e.target.closest('.tree-label') || e.target.closest('.favorite-item') || e.target.closest('#homeLink')) {
             if (window.innerWidth <= 768) {
                 closeSidebar();
             }
@@ -2243,7 +2236,7 @@ function initializeBackToTop() {
     const listEl = document.getElementById('tableRows');
 
     function checkScrollPosition() {
-        backToTopBtn.classList.toggle('visible', listEl.scrollTop > 300);
+        backToTopBtn.classList.toggle('show', listEl.scrollTop > 300);
     }
 
     listEl.addEventListener('scroll', checkScrollPosition, { passive: true });
@@ -2367,7 +2360,7 @@ function initializePinModal() {
 // Initialize keyboard shortcuts — the full power-key layer.
 // Arrows and vim-style j/k move rows; Enter and l open; h and Backspace
 // go up; Home/End jump; PageUp/PageDown scroll; / focuses query; ? opens help.
-function initializeKeyboardShortcuts(searchInput, helpModal, closeHelpModal, closeSidebar, updateClearButtonVisibility) {
+function initializeKeyboardShortcuts(searchInput, helpModal, closeHelpModal, closeSidebar, closeSettingsModal, updateClearButtonVisibility) {
     const sidebar = document.getElementById('sidebar');
     const pinModal = document.getElementById('pinModal');
     const settingsModal = document.getElementById('settingsModal');
@@ -2485,6 +2478,8 @@ function initializeKeyboardShortcuts(searchInput, helpModal, closeHelpModal, clo
                 closePinModal();
             } else if (helpModal.classList.contains('active')) {
                 closeHelpModal();
+            } else if (settingsModal.classList.contains('active')) {
+                closeSettingsModal();
             } else if (sidebar.classList.contains('active')) {
                 closeSidebar();
             } else if (searchInput.value && !typing) {
@@ -2786,8 +2781,6 @@ async function loadDataFromCustomUrl(customUrl) {
             loadingEl.innerHTML = `<div class="loading">${status}</div>`;
         });
         
-        console.log('Fetched', blobs.length, 'blobs from custom URL');
-        
         if (blobs.length === 0) {
             throw new Error('No blobs found in storage container');
         }
@@ -2797,9 +2790,7 @@ async function loadDataFromCustomUrl(customUrl) {
         filteredDownloads = [...allDownloads];
         
         // Rebuild optimized data structures
-        console.log('Building folder tree...');
         buildFolderTree();
-        console.log('Folder tree built with', folderTree.size, 'nodes');
         
         // Cache the data
         await cacheData({ downloads: blobs, timestamp: Date.now(), customUrl: customUrl });
@@ -2814,7 +2805,7 @@ async function loadDataFromCustomUrl(customUrl) {
         const lastUpdatedEl = document.getElementById('lastUpdated');
         if (lastUpdatedEl) {
             lastUpdatedEl.textContent = 'just now';
-            lastUpdatedEl.title = 'Last stamped ' + new Date().toLocaleString();
+            lastUpdatedEl.title = 'Last updated ' + new Date().toLocaleString();
         }
         renderFolderNav();
         
@@ -2845,13 +2836,13 @@ function initializeSettingsModal() {
     customUrlInput.value = getCustomUrl();
     
     const showStatus = (type, message) => {
-        settingsStatus.style.display = 'flex';
+        settingsStatus.hidden = false;
         settingsStatus.className = 'settings-status ' + type;
-        settingsStatus.querySelector('.status-text').textContent = message;
+        settingsStatus.textContent = message;
     };
     
     const hideStatus = () => {
-        settingsStatus.style.display = 'none';
+        settingsStatus.hidden = true;
     };
     
     const openSettingsModal = () => {
@@ -2915,7 +2906,7 @@ function initializeSettingsModal() {
             showStatus('error', `Error: ${error.message}`);
         } finally {
             loadBtn.disabled = false;
-            loadBtn.textContent = 'Load Storage';
+            loadBtn.textContent = 'Open';
         }
     });
     
@@ -2993,9 +2984,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const { closeSidebar } = initializeSidebar();
     const { helpModal, closeHelpModal } = initializeHelpModal();
     initializePinModal();
-    initializeSettingsModal();
+    const { closeSettingsModal } = initializeSettingsModal();
     
-    initializeKeyboardShortcuts(searchInput, helpModal, closeHelpModal, closeSidebar, updateClearButtonVisibility);
+    initializeKeyboardShortcuts(searchInput, helpModal, closeHelpModal, closeSidebar, closeSettingsModal, updateClearButtonVisibility);
     initializeUrlState(searchInput, updateClearButtonVisibility);
     
     // Check if we should load from custom URL

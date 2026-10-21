@@ -882,8 +882,10 @@ html[data-theme='dark'] #darkModeToggle .ico-sun { display: block; }
     z-index: 90;
     background: rgba(0, 0, 0, 0.45);
     display: none;
-    align-items: center;
-    justify-content: center;
+    /* A dialog taller than the viewport scrolls with the overlay, so no
+       content sits unreachable below the fold on short screens. */
+    overflow: auto;
+    overscroll-behavior: contain;
     padding: 20px;
 }
 html[data-theme='dark'] .modal-overlay { background: rgba(0, 0, 0, 0.6); }
@@ -892,6 +894,9 @@ html[data-theme='dark'] .modal-overlay { background: rgba(0, 0, 0, 0.6); }
 .modal-content {
     position: relative;
     width: min(440px, 100%);
+    /* auto margins center the dialog when it fits and keep both ends
+       reachable when it is taller than the viewport. */
+    margin: auto;
     background: var(--surface);
     color: var(--text);
     border: 1px solid var(--border);
@@ -922,6 +927,9 @@ html[data-theme='dark'] .modal-overlay { background: rgba(0, 0, 0, 0.6); }
     font-size: 20px;
     font-weight: 600;
     margin: 0 0 14px;
+    /* Keeps a wrapping title clear of the absolutely positioned close
+       button, which matters most at phone widths. */
+    padding-right: 44px;
 }
 
 .pin-form label, .settings-form label, .settings-section h3 {
@@ -1087,6 +1095,9 @@ html[data-theme='dark'] .modal-overlay { background: rgba(0, 0, 0, 0.6); }
 
 @media (max-width: 1120px) {
     .details-pane { display: none; }
+    /* The pane has no room at this width, so the toggle would be a button
+       that changes nothing on screen. */
+    #detailsToggle { display: none; }
 }
 
 @media (max-width: 1000px) {
@@ -1145,6 +1156,14 @@ html[data-theme='dark'] .modal-overlay { background: rgba(0, 0, 0, 0.6); }
     .toolbar { padding: 2px 8px 6px; }
     .list-area { padding: 0 8px; }
     .modal-content { padding: 20px 18px; }
+    .modal-overlay { padding: 12px; }
+    .modal-close { width: 40px; height: 40px; }
+    .modal-content h2 { padding-right: 40px; }
+    .pin-save-btn, .pin-delete-btn, .pin-cancel-btn,
+    .settings-load-btn, .settings-reset-btn { min-height: 44px; }
+    /* 16px is the threshold below which mobile Safari zooms the page when
+       an input takes focus. */
+    .pin-form input, .settings-form input { font-size: 16px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

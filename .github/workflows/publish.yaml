@@ -57,7 +57,7 @@ jobs:
             # Push to main → edge
             type=edge,branch=main
             # Pull requests → pr-<n> tag (built, never pushed)
-            type=ref,event=pull_request
+            type=ref,event=pr
           labels: |
             org.opencontainers.image.title=Blob Explorer
             org.opencontainers.image.description=A self-hosted web interface for browsing and downloading files from any public Azure Blob Storage container

@@ -4,14 +4,14 @@ let filteredDownloads = [];
 let currentPath = [];
 let activeFileTypes = new Set();
 let allFileTypesSelected = true; // true = show all types, false = use activeFileTypes set
-let currentPage = 1;
-const itemsPerPage = 100;
 let worker = null;
 let sortBy = 'date-desc'; // date-desc, date-asc, size-desc, size-asc, name-asc
 
 // Performance optimizations
 let folderTree = new Map(); // Hierarchical folder structure for O(1) navigation
 let fileTypeCache = new Map(); // Cache file type info to avoid repeated calculations
+let folderSizes = new Map(); // path -> recursive total bytes of all blobs under that prefix
+let folderDates = new Map(); // path -> newest LastModified (ms) among all blobs under that prefix (recursive)
 
 // ============================================================================
 // Analytics Events API
@@ -150,30 +150,35 @@ function makeKeyboardAccessible(element, clickHandler) {
     element.addEventListener('click', clickHandler);
 }
 
-// Accessibility helper - make list item with arrow key navigation
-function makeListItemAccessible(element, clickHandler) {
-    element.setAttribute('tabindex', '0');
-    element.setAttribute('role', 'button');
-    element.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            clickHandler(e);
-        } else if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            const next = element.nextElementSibling;
-            if (next && next.getAttribute('tabindex') === '0') {
-                next.focus();
-            }
-        } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            const prev = element.previousElementSibling;
-            if (prev && prev.getAttribute('tabindex') === '0') {
-                prev.focus();
-            }
-        }
-    });
-    element.addEventListener('click', clickHandler);
-}
+// ---------------------------------------------------------------------------
+// Fluent glyphs and explorer state (selection, nav tree, view modes)
+// ---------------------------------------------------------------------------
+const FL = {
+    folder: '<svg viewBox="0 0 24 24" class="ico-folder" aria-hidden="true"><path d="M2.5 6.1c0-.9.75-1.6 1.65-1.6h5.05c.5 0 .98.22 1.3.61l.98 1.19h8.37c.9 0 1.65.7 1.65 1.6v.85H2.5V6.1z" fill="var(--folder-back)"/><path d="M2.5 8.6h19v9.3c0 .95-.75 1.6-1.65 1.6H4.15c-.9 0-1.65-.65-1.65-1.6V8.6z" fill="var(--folder-front)"/></svg>',
+    copy: '<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7.2" y="3.7" width="9" height="11" rx="1.5" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M12.3 15.8v.5a1.5 1.5 0 0 1-1.5 1.5H4.8a1.5 1.5 0 0 1-1.5-1.5v-8a1.5 1.5 0 0 1 1.5-1.5h.5" stroke="currentColor" stroke-width="1.4" fill="none"/></svg>',
+    download: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3.5v9M5.8 8.5 10 12.7l4.2-4.2M4 16.3h12" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    check: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4.8 10.5 3.4 3.4 7-7.4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    open: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 6.1c0-.9.75-1.6 1.65-1.6h5.05c.5 0 .98.22 1.3.61l.98 1.19h8.37c.9 0 1.65.7 1.65 1.6v.85H2.5V6.1z" fill="currentColor" opacity="0.85"/><path d="M2.5 8.6h19v9.3c0 .95-.75 1.6-1.65 1.6H4.15c-.9 0-1.65-.65-1.65-1.6V8.6z" fill="currentColor" opacity="0.5"/></svg>',
+    empty: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 6.1c0-.9.75-1.6 1.65-1.6h5.05c.5 0 .98.22 1.3.61l.98 1.19h8.37c.9 0 1.65.7 1.65 1.6v.85H2.5V6.1z" fill="currentColor"/><path d="M2.5 8.6h19v9.3c0 .95-.75 1.6-1.65 1.6H4.15c-.9 0-1.65-.65-1.65-1.6V8.6z" fill="currentColor" opacity="0.55"/></svg>',
+    home: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 9.3 10 3.6l6.5 5.7M5.2 8v7.4c0 .4.3.6.6.6h3.1v-3.6c0-.4.2-.6.6-.6h1c.4 0 .6.2.6.6v3.6h3.1c.3 0 .6-.2.6-.6V8" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+};
+
+const IS_TOUCH = window.matchMedia('(hover: none)').matches;
+let selectedRow = null;
+let selectedKey = null;
+let viewItems = []; // flat list backing the windowed render: {type:'folder',name,path} | {type:'file',data}
+let viewFromSearch = false;
+let emptyMessage = '';
+let winStart = -1;
+let winEnd = -1;
+let navDepth = 0;
+let viewMode = localStorage.getItem('explorerView') || 'list';
+let detailsOpen = localStorage.getItem('explorerDetails') === 'on';
+let navOpen = localStorage.getItem('explorerNav') !== 'off';
+
+const treeExpanded = new Set(JSON.parse(localStorage.getItem('explorerTreeExpanded') || '[]'));
+function saveTreeExpanded() { localStorage.setItem('explorerTreeExpanded', JSON.stringify([...treeExpanded])); }
+
 
 // User Favorites (stored in localStorage)
 const USER_FAVORITES_KEY = 'userFavorites';
@@ -273,8 +278,8 @@ async function fetchMetadata(updateUI = true) {
                 const lastUpdatedEl = document.getElementById('lastUpdated');
                 if (lastUpdatedEl && metadata.lastUpdated) {
                     const relativeTime = formatRelativeTime(metadata.lastUpdated);
-                    lastUpdatedEl.textContent = `Last updated ${relativeTime}`;
-                    lastUpdatedEl.title = new Date(metadata.lastUpdated).toLocaleString();
+                    lastUpdatedEl.textContent = relativeTime;
+                    lastUpdatedEl.title = 'Last updated ' + new Date(metadata.lastUpdated).toLocaleString();
                 }
             }
             return metadata;
@@ -322,7 +327,7 @@ async function cacheData(data) {
 
 // Load data directly (without Web Worker for reliability)
 async function loadData() {
-    const loadingEl = document.getElementById('downloadList');
+    const loadingEl = document.getElementById('tableRows');
     
     try {
         // Fetch metadata first to check if server data is newer than cache
@@ -340,13 +345,21 @@ async function loadData() {
             if (!cacheIsStale) {
                 console.log('Loading from cache:', cached.downloads.length, 'items (cache is current)');
                 loadingEl.innerHTML = '<div class="loading">Loading from cache...</div>';
-                allDownloads = cached.downloads;
+                allDownloads = prepareDownloads(cached.downloads);
                 filteredDownloads = [...allDownloads];
                 
                 // Build optimized data structures
                 console.log('Building folder tree and caching file types...');
                 buildFolderTree();
                 console.log('Folder tree built with', folderTree.size, 'nodes');
+                renderFolderNav();
+                if (cached.timestamp) {
+                    const lu = document.getElementById('lastUpdated');
+                    if (lu) {
+                        lu.textContent = formatRelativeTime(new Date(cached.timestamp).toISOString());
+                        lu.title = 'Last updated ' + new Date(cached.timestamp).toLocaleString();
+                    }
+                }
                 
                 initializeFilters();
                 renderFavorites();
@@ -360,7 +373,7 @@ async function loadData() {
         }
         
         console.log('Fetching JSON...');
-        loadingEl.innerHTML = '<div class="loading">Downloading data (36MB)... This will take 10-20 seconds.</div>';
+        loadingEl.innerHTML = '<div class="loading">Downloading the container listing…</div>';
         
         // Load directly - more reliable than Web Worker
         const response = await fetch('data/downloads.json');
@@ -379,13 +392,14 @@ async function loadData() {
         const downloads = JSON.parse(text);
         console.log('Parsed successfully:', downloads.length, 'items');
         
-        allDownloads = downloads;
+        allDownloads = prepareDownloads(downloads);
         filteredDownloads = [...allDownloads];
         
         // Build optimized data structures
         console.log('Building folder tree and caching file types...');
         buildFolderTree();
         console.log('Folder tree built with', folderTree.size, 'nodes');
+        renderFolderNav();
         
         // Cache the data with the server's lastUpdated timestamp for future freshness checks
         console.log('Caching data...');
@@ -408,6 +422,8 @@ async function loadData() {
 function buildFolderTree() {
     folderTree.clear();
     fileTypeCache.clear();
+    folderSizes.clear();
+    folderDates.clear();
     
     // Initialize root
     folderTree.set('', { folders: new Set(), files: [] });
@@ -425,6 +441,22 @@ function buildFolderTree() {
             folderTree.set(parentPath, { folders: new Set(), files: [] });
         }
         folderTree.get(parentPath).files.push(download);
+        // Recursive size rollup: add this blob's bytes to every ancestor prefix
+        const bytes = Number(download.Length) || 0;
+        if (bytes) {
+            for (let i = 0; i <= parts.length - 1; i++) {
+                const ancestor = parts.slice(0, i).join('/');
+                folderSizes.set(ancestor, (folderSizes.get(ancestor) || 0) + bytes);
+            }
+        }
+        // Recursive date rollup: newest LastModified among descendants
+        const ts = new Date(download.LastModified).getTime();
+        if (Number.isFinite(ts)) {
+            for (let i = 0; i <= parts.length - 1; i++) {
+                const ancestor = parts.slice(0, i).join('/');
+                if ((folderDates.get(ancestor) || 0) < ts) folderDates.set(ancestor, ts);
+            }
+        }
         
         // Build folder hierarchy
         for (let i = 0; i < parts.length - 1; i++) {
@@ -484,23 +516,23 @@ function getFileTypeInfo(download) {
         'htm': { icon: icons.web, name: 'HTML', color: '#1976d2' },
         'html': { icon: icons.web, name: 'HTML', color: '#1976d2' },
         'txt': { icon: icons.txt, name: 'Text', color: '#666' },
-        'exe': { icon: icons.installer, name: 'Installer', color: '#00897b' },
-        'msi': { icon: icons.installer, name: 'Installer', color: '#00897b' },
+        'exe': { icon: icons.installer, name: 'Installer', stamp: 'SETUP', color: '#00897b' },
+        'msi': { icon: icons.installer, name: 'Installer', stamp: 'SETUP', color: '#00897b' },
         'iso': { icon: icons.iso, name: 'ISO', color: '#5e35b1' },
         'xml': { icon: icons.xml, name: 'XML', color: '#f57c00' },
         'json': { icon: icons.json, name: 'JSON', color: '#388e3c' },
         'dll': { icon: icons.dll, name: 'DLL', color: '#455a64' },
-        'cer': { icon: icons.cert, name: 'Certificate', color: '#c62828' },
+        'cer': { icon: icons.cert, name: 'Certificate', stamp: 'CERT', color: '#c62828' },
         'jpg': { icon: icons.image, name: 'Image', color: '#e91e63' },
         'jpeg': { icon: icons.image, name: 'Image', color: '#e91e63' },
         'png': { icon: icons.image, name: 'Image', color: '#e91e63' },
         'gif': { icon: icons.image, name: 'Image', color: '#e91e63' },
         'doc': { icon: icons.word, name: 'Word', color: '#1565c0' },
         'docx': { icon: icons.word, name: 'Word', color: '#1565c0' },
-        'db': { icon: icons.database, name: 'Database', color: '#6d4c41' },
+        'db': { icon: icons.database, name: 'Database', stamp: 'DB', color: '#6d4c41' },
     };
     
-    const result = typeMap[ext] || { icon: icons.file, name: ext.toUpperCase(), color: '#757575' };
+    const result = typeMap[ext] || { icon: icons.file, name: ext.toUpperCase(), stamp: ext.toUpperCase().slice(0, 7), color: '#757575' };
     
     // Cache the result
     fileTypeCache.set(download.Url, result);
@@ -512,115 +544,161 @@ function getFileTypeInfo(download) {
 function formatFileSize(bytes) {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
     return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
 }
 
-// Format date
+// Format date. No locale argument: the browser's locale sets date order,
+// month names, and the 12/24-hour clock; the visitor's timezone sets the
+// displayed time.
 function formatDate(dateString) {
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) +
+        ' ' + date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
 
-// Create a download item DOM element
+// Create a manifest row for a file
 // @param {Object} download - The download object
 // @param {boolean} showPath - Whether to show the folder path (used in search results)
-// @returns {HTMLElement} The download item element
+// @returns {HTMLElement} The row element
 function createDownloadItemElement(download, showPath = false) {
     const typeInfo = getFileTypeInfo(download);
     const fileName = download.Name.split('/').pop();
-    
+
     const itemEl = document.createElement('div');
-    itemEl.className = 'download-item';
+    itemEl.className = 'mrow';
     itemEl.setAttribute('role', 'listitem');
     itemEl.setAttribute('tabindex', '0');
-    
-    // Add arrow key navigation
-    itemEl.addEventListener('keydown', (e) => {
-        if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            const next = itemEl.nextElementSibling;
-            if (next) next.focus();
-        } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            const prev = itemEl.previousElementSibling;
-            if (prev) prev.focus();
-        }
-    });
-    
+    itemEl.dataset.path = download.Name;
+    itemEl.dataset.url = download.Url;
+    itemEl.dataset.name = fileName;
+    itemEl.dataset.length = download.Length;
+    itemEl.dataset.date = download.LastModified;
+    itemEl.dataset.type = typeInfo.name;
+    itemEl.title = fileName;
+
     let pathHtml = '';
+    let folderPath = '';
     if (showPath) {
-        const folderPath = download.Name.split('/').slice(0, -1).join(' / ');
-        pathHtml = `<div class="download-path"><span class="icon-folder" aria-hidden="true"></span> ${folderPath || 'Root'}</div>`;
+        folderPath = download.Name.split('/').slice(0, -1).join('/');
+        const folderLabel = folderPath ? folderPath : 'the root folder';
+        pathHtml = `<button type="button" class="m-path" title="Open ${folderLabel}">${folderPath ? '/' + folderPath : '/'}</button>`;
     }
-    
+
     itemEl.innerHTML = `
-        <div class="download-item-header">
-            <div class="download-icon" aria-hidden="true">${typeInfo.icon}</div>
-            <div class="download-info">
-                <div class="download-name">${fileName}</div>
-                ${pathHtml}
-                <div class="download-meta">
-                    <span class="meta-item"><span class="icon-${showPath ? 'file' : 'folder'}-small" aria-hidden="true"></span> <span class="sr-only">Type: </span>${typeInfo.name}</span>
-                    <span class="meta-item"><span class="icon-size" aria-hidden="true"></span> <span class="sr-only">Size: </span>${formatFileSize(download.Length)}</span>
-                    <span class="meta-item"><span class="icon-date" aria-hidden="true"></span> <span class="sr-only">Date: </span>${formatDate(download.LastModified)}</span>
-                </div>
-            </div>
-        </div>
-        <div class="download-item-footer">
-            <div class="download-actions">
-                <button class="copy-link-button" data-url="${download.Url}" data-path="${download.Name}" aria-label="Copy download link for ${fileName}"><span class="icon-copy" aria-hidden="true"></span> Copy Link</button>
-                <button class="download-button" data-path="${download.Name}" data-url="${download.Url}" aria-label="Download ${fileName}">Download</button>
-            </div>
-        </div>
+        <span class="m-name">
+            <span class="m-icon" style="color:${typeInfo.color}">${typeInfo.icon}</span>
+            ${pathHtml}<span class="m-name-text">${fileName}</span>
+            <span class="sr-only">${typeInfo.name}, ${formatFileSize(download.Length)}, modified ${formatDate(download.LastModified)}.</span>
+        </span>
+        <span class="m-date" aria-hidden="true">${formatDate(download.LastModified)}</span>
+        <span class="m-type" aria-hidden="true">${typeInfo.name}</span>
+        <span class="m-size">${formatFileSize(download.Length)}</span>
+        <span class="m-act">
+            <button class="copy-link-button" data-url="${download.Url}" data-path="${download.Name}" aria-label="Copy link for ${fileName}" title="Copy link">${FL.copy}</button>
+            <button class="download-button" data-path="${download.Name}" data-url="${download.Url}" aria-label="Download ${fileName}" title="Download">${FL.download}</button>
+        </span>
     `;
-    
+
+    if (showPath) {
+        itemEl.querySelector('.m-path').addEventListener('click', (e) => {
+            e.stopPropagation();
+            navigateToPath(folderPath ? folderPath.split('/') : []);
+        });
+    }
+
     return itemEl;
 }
 
-// Filter downloads based on criteria
-// @param {Array} downloads - Array of download objects to filter
-// @param {Object} options - Filter options
-// @param {string} options.searchTerm - Search term (supports wildcards and regex)
-// @param {Set} options.fileTypes - Set of file type names to include (empty = all)
-// @param {boolean} options.excludeZeroByte - Whether to exclude 0-byte files (default: true)
-// @returns {Array} Filtered downloads
-function filterDownloads(downloads, options = {}) {
-    const {
-        searchTerm = '',
-        fileTypes = new Set(),
-        allTypesSelected = true,
-        excludeZeroByte = true
-    } = options;
-    
-    return downloads.filter(download => {
-        // Exclude 0-byte files
-        if (excludeZeroByte && download.Length <= 0) {
-            return false;
+
+// Per-query search matchers: one compiled predicate per query instead of a
+// fresh RegExp per item. Keyed by the (already lowercased) search term, so
+// repeated passes over the same query reuse it.
+const searchMatcherCache = new Map();
+
+function makeSearchMatcher(searchTerm) {
+    const cached = searchMatcherCache.get(searchTerm);
+    if (cached) return cached;
+
+    let matcher;
+    if (searchTerm.startsWith('~')) {
+        // Fuzzy search: ~ prefix (~~ escapes a literal tilde start)
+        if (searchTerm.startsWith('~~')) {
+            const literal = searchTerm.slice(1);
+            matcher = (text) => text.includes(literal);
+        } else {
+            const query = searchTerm.slice(1);
+            matcher = (text) => fuzzyScore(query, text) >= 0;
         }
-        
-        // File type filter
-        if (!allTypesSelected) {
-            if (fileTypes.size === 0) {
-                return false; // No types selected = show nothing
-            }
-            const typeInfo = getFileTypeInfo(download);
-            if (!fileTypes.has(typeInfo.name)) {
-                return false;
-            }
+    } else if (searchTerm.startsWith('/') || searchTerm.startsWith('^')) {
+        // Regex search: patterns starting with / or ^ are treated as regex
+        try {
+            // Remove leading / if present (^ is kept as it's part of the regex)
+            const pattern = searchTerm.startsWith('/') ? searchTerm.slice(1) : searchTerm;
+            const regex = new RegExp(pattern, 'i');
+            matcher = (text) => regex.test(text);
+        } catch (e) {
+            // Invalid regex, fall back to literal search
+            matcher = (text) => text.includes(searchTerm);
         }
-        
-        // Search filter
-        if (searchTerm) {
-            const fullPath = download.Name.toLowerCase();
-            if (!matchesSearch(fullPath, searchTerm.toLowerCase())) {
-                return false;
-            }
+    } else if (searchTerm.includes('*') || searchTerm.includes('?')) {
+        // test() is unanchored, so leading/trailing .* are dead weight:
+        // stripping them turns a backtracking scan into a plain substring hunt.
+        const pattern = wildcardToRegex(searchTerm).source.replace(/^\.\*/, '').replace(/\.\*$/, '');
+        const regex = new RegExp(pattern || '(?:)', 'i');
+        matcher = (text) => regex.test(text);
+    } else if (!searchTerm.includes(' ')) {
+        // Space-insensitive matching is a no-op for queries without spaces.
+        matcher = (text) => text.includes(searchTerm);
+    } else {
+        // Plain search with space-insensitive matching
+        const noSpaces = searchTerm.replace(/\s/g, '');
+        matcher = (text) => text.includes(searchTerm) || text.replace(/\s/g, '').includes(noSpaces);
+    }
+
+    if (searchMatcherCache.size > 100) {
+        searchMatcherCache.delete(searchMatcherCache.keys().next().value);
+    }
+    searchMatcherCache.set(searchTerm, matcher);
+    return matcher;
+}
+
+// Fields computed once per blob so per-keystroke passes stay allocation-light:
+// _lc for search, _slashes for folder-depth math.
+function prepareDownloads(downloads) {
+    for (const download of downloads) {
+        let slashes = 0;
+        for (let i = 0; i < download.Name.length; i++) {
+            if (download.Name.charCodeAt(i) === 47) slashes++;
         }
-        
-        return true;
-    });
+        download._slashes = slashes;
+        download._lc = download.Name.toLowerCase();
+    }
+    return downloads;
+}
+
+// Search pool: downloads matching the current query anywhere in the
+// container (zero-byte files excluded, file-type filter NOT applied). Built
+// once per query and shared by the type-count pass and the result view.
+let searchPool = [];
+let searchPoolQuery = null;
+
+function buildSearchPool(searchTerm) {
+    const matcher = makeSearchMatcher(searchTerm);
+    searchPool = allDownloads.filter(d => d.Length > 0 && matcher(d._lc));
+    searchPoolQuery = searchTerm;
+}
+
+function typeAllows(download) {
+    return allFileTypesSelected
+        || (activeFileTypes.size > 0 && activeFileTypes.has(getFileTypeInfo(download).name));
+}
+
+function filterByFileTypes(files) {
+    if (allFileTypesSelected) return files;
+    if (activeFileTypes.size === 0) return [];
+    return files.filter(typeAllows);
 }
 
 // Initialize file type filters
@@ -632,12 +710,14 @@ function initializeFilters() {
 function updateFileTypeFilterCounts() {
     const searchTerm = document.getElementById('searchInput').value;
     
-    // Get files that match current search criteria (but not file type filter)
-    const matchingFiles = filterDownloads(allDownloads, {
-        searchTerm,
-        excludeZeroByte: true
-        // Note: fileTypes not passed - we want counts for all types
-    });
+    const term = searchTerm.toLowerCase();
+    let matchingFiles;
+    if (term) {
+        if (searchPoolQuery !== term) buildSearchPool(term);
+        matchingFiles = searchPool;
+    } else {
+        matchingFiles = allDownloads.filter(d => d.Length > 0);
+    }
     
     // Count file types in matching files
     const fileTypeCounts = {};
@@ -648,10 +728,13 @@ function updateFileTypeFilterCounts() {
     
     const filterContainer = document.getElementById('fileTypeFilter');
     const filterBtn = document.getElementById('filterBtnText');
-    const currentSelections = new Set(activeFileTypes);
+    const prevScroll = filterContainer.scrollTop;
     filterContainer.innerHTML = '';
     
-    const sortedTypes = Object.entries(fileTypeCounts).sort((a, b) => b[1] - a[1]);
+    // Alphabetical (not by count): the menu recomputes counts as the search
+    // changes, so count-ordering would reshuffle the list while the user
+    // reads it. Kind names are known words - predictable position wins.
+    const sortedTypes = Object.entries(fileTypeCounts).sort((a, b) => a[0].localeCompare(b[0]));
     
     // Add Select All / Select None buttons
     const buttonContainer = document.createElement('div');
@@ -660,13 +743,12 @@ function updateFileTypeFilterCounts() {
     const selectAllBtn = document.createElement('button');
     selectAllBtn.type = 'button';
     selectAllBtn.className = 'dropdown-action-btn';
-    selectAllBtn.textContent = 'Select All';
+    selectAllBtn.textContent = 'All file types';
     selectAllBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         allFileTypesSelected = true;
         activeFileTypes.clear();
         updateFileTypeFilterCounts();
-        currentPage = 1;
         displayDownloads();
         BlobExplorerAnalytics.filterChange(Array.from(activeFileTypes), sortedTypes.length);
     });
@@ -674,24 +756,22 @@ function updateFileTypeFilterCounts() {
     const selectNoneBtn = document.createElement('button');
     selectNoneBtn.type = 'button';
     selectNoneBtn.className = 'dropdown-action-btn';
-    selectNoneBtn.textContent = 'Select None';
+    selectNoneBtn.textContent = 'No file types';
     selectNoneBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         allFileTypesSelected = false;
         activeFileTypes.clear();
         updateFileTypeFilterCounts();
-        currentPage = 1;
         displayDownloads();
         BlobExplorerAnalytics.filterChange([], sortedTypes.length);
     });
     
     buttonContainer.appendChild(selectAllBtn);
     buttonContainer.appendChild(selectNoneBtn);
-    filterContainer.appendChild(buttonContainer);
     
     sortedTypes.forEach(([type, count]) => {
         const label = document.createElement('label');
-        label.className = 'dropdown-checkbox';
+        label.className = 'filter-option';
         
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
@@ -717,7 +797,6 @@ function updateFileTypeFilterCounts() {
                 activeFileTypes.delete(type);
             }
             updateFilterButtonText();
-            currentPage = 1;
             displayDownloads();
             BlobExplorerAnalytics.filterChange(Array.from(activeFileTypes), sortedTypes.length);
         });
@@ -729,7 +808,8 @@ function updateFileTypeFilterCounts() {
         label.appendChild(text);
         filterContainer.appendChild(label);
     });
-    
+    filterContainer.appendChild(buttonContainer);
+    filterContainer.scrollTop = prevScroll;
     updateFilterButtonText();
 }
 
@@ -741,11 +821,11 @@ function updateFilterButtonText() {
     const count = activeFileTypes.size;
     
     if (allFileTypesSelected) {
-        filterBtn.textContent = 'All Types';
+        filterBtn.textContent = 'All file types';
     } else if (count === 0) {
-        filterBtn.textContent = 'No Types';
+        filterBtn.textContent = 'No file types';
     } else {
-        const types = Array.from(activeFileTypes).join(', ');
+        const types = Array.from(activeFileTypes).sort((a, b) => a.localeCompare(b)).join(', ');
         filterBtn.textContent = count <= 2 ? types : `${count} types selected`;
     }
 }
@@ -856,7 +936,7 @@ function renderFavorites() {
                 const searchInput = document.getElementById('searchInput');
                 if (searchInput) {
                     searchInput.value = searchQuery;
-                    const searchBar = searchInput.closest('.search-bar');
+                    const searchBar = searchInput.closest('.search-box');
                     if (searchBar) searchBar.classList.add('has-text');
                     currentPath = [];
                     applyFilters();
@@ -943,7 +1023,7 @@ function renderUserFavorites(container) {
     // Add "My Pins" label
     const labelEl = document.createElement('div');
     labelEl.className = 'favorite-label';
-    labelEl.textContent = 'My Views';
+    labelEl.textContent = 'Pinned views';
     container.appendChild(labelEl);
     
     // Add pinned items
@@ -974,7 +1054,7 @@ function renderUserFavorites(container) {
             if (fav.type === 'search') {
                 const searchInput = document.getElementById('searchInput');
                 searchInput.value = fav.query;
-                const searchBar = searchInput.closest('.search-bar');
+                const searchBar = searchInput.closest('.search-box');
                 if (searchBar) searchBar.classList.add('has-text');
                 currentPath = [];
                 applyFilters();
@@ -1003,22 +1083,8 @@ function renderUserFavorites(container) {
     // Add "Save current view" button
     const addPinEl = document.createElement('div');
     addPinEl.className = 'favorite-item add-pin-item';
-    addPinEl.innerHTML = '<span class="icon-pin-add" aria-hidden="true"></span> Pin current view...';
-    makeKeyboardAccessible(addPinEl, () => {
-        const searchInput = document.getElementById('searchInput');
-        const searchQuery = searchInput ? searchInput.value.trim() : '';
-        
-        if (searchQuery) {
-            // Save current search
-            openPinModal('add', { type: 'search', query: searchQuery, name: searchQuery });
-        } else if (currentPath.length > 0) {
-            // Save current folder
-            const folderName = currentPath[currentPath.length - 1];
-            openPinModal('add', { type: 'folder', path: [...currentPath], name: folderName });
-        } else {
-            showToast('Navigate to a folder or search first');
-        }
-    });
+    addPinEl.innerHTML = `${FL.open} Pin current view…`;
+    makeKeyboardAccessible(addPinEl, openPinForCurrentView);
     container.appendChild(addPinEl);
 }
 
@@ -1148,52 +1214,28 @@ function deletePinFromModal() {
     renderFavorites();
 }
 
-// Build folder structure
-function buildFolderStructure() {
-    const structure = {};
-    
-    allDownloads.forEach(download => {
-        const parts = download.Name.split('/');
-        let current = structure;
-        
-        for (let i = 0; i < parts.length - 1; i++) {
-            const part = parts[i];
-            if (!current[part]) {
-                current[part] = { _files: [], _folders: {} };
-            }
-            current = current[part]._folders;
-        }
-        
-        const parentPath = parts.slice(0, -1).join('/');
-        let parent = structure;
-        for (const part of parts.slice(0, -1)) {
-            parent = parent[part]._folders;
-        }
-        if (!parent._files) parent._files = [];
-        parent._files.push(download);
-    });
-    
-    return structure;
-}
-
 // Navigate to path
 function navigateToPath(path) {
+    const previousPath = currentPath;
     currentPath = path;
-    currentPage = 1; // Reset to first page when navigating
-    
+    navDepth++;
+    updateNavButtons();
+    syncFolderTree();
+    clearSelection();
+
     // Track folder navigation
     const folderPath = path.join('/');
     const folderName = path.length > 0 ? path[path.length - 1] : 'Home';
     BlobExplorerAnalytics.folderNavigate(folderPath, folderName);
-    
+
     // Clear search when navigating to a folder
     const searchInput = document.getElementById('searchInput');
     if (searchInput && searchInput.value) {
         searchInput.value = '';
-        const searchBar = searchInput.closest('.search-bar');
+        const searchBar = searchInput.closest('.search-box');
         if (searchBar) searchBar.classList.remove('has-text');
     }
-    
+
     // Update browser history
     const url = new URL(window.location);
     url.searchParams.delete('q'); // Clear search query
@@ -1201,13 +1243,21 @@ function navigateToPath(path) {
         const pathString = path.join('/');
         url.searchParams.set('path', pathString);
     } else {
-        // Remove path parameter for root/home
         url.searchParams.delete('path');
     }
     window.history.pushState({ path: path, search: '' }, '', url);
-    
+
     renderFavorites();
     applyFilters();
+    // Going up one level, keep the user's spot: pre-select (and scroll to)
+    // the folder we just left, so j continues from there instead of the
+    // top of the list.
+    const leftFolder = previousPath.length === path.length + 1 &&
+        path.every((seg, i) => seg === previousPath[i]) ? previousPath[path.length] : null;
+    if (leftFolder) {
+        const idx = viewItems.findIndex(it => it.type === 'folder' && it.name === leftFolder);
+        if (idx >= 0) focusIndex(idx);
+    }
     renderBreadcrumbs();
 }
 
@@ -1215,29 +1265,20 @@ function navigateToPath(path) {
 function renderBreadcrumbs() {
     const breadcrumbsEl = document.getElementById('breadcrumbs');
     const searchTerm = document.getElementById('searchInput').value.trim();
-    
-    // If searching, show "Search results" instead of path
+
+    const homeCrumb = `<span class="breadcrumb crumb-home" tabindex="0" role="link" data-path="[]" aria-label="Home">${FL.home}<span>Home</span></span>`;
+
     if (searchTerm) {
-        breadcrumbsEl.innerHTML = '<span class="breadcrumb search-breadcrumb">Search results</span>';
-        return;
+        breadcrumbsEl.innerHTML = `${homeCrumb}<span class="breadcrumb search-crumb">Search results for “${searchTerm}”</span>`;
+    } else {
+        const segs = currentPath.map((seg, i) =>
+            `<span class="breadcrumb" tabindex="0" role="link" data-path='${JSON.stringify(currentPath.slice(0, i + 1))}'>${seg}</span>`
+        ).join('');
+        breadcrumbsEl.innerHTML = homeCrumb + segs;
     }
-    
-    if (currentPath.length === 0) {
-        breadcrumbsEl.innerHTML = '';
-        return;
-    }
-    
-    const crumbs = ['Home', ...currentPath];
-    breadcrumbsEl.innerHTML = crumbs.map((crumb, index) => {
-        const path = index === 0 ? [] : currentPath.slice(0, index);
-        return `<span class="breadcrumb" tabindex="0" role="link" data-path='${JSON.stringify(path)}'>${crumb}</span>`;
-    }).join('');
-    
-    breadcrumbsEl.querySelectorAll('.breadcrumb').forEach(el => {
-        const navigateHandler = () => {
-            const path = JSON.parse(el.dataset.path);
-            navigateToPath(path);
-        };
+
+    breadcrumbsEl.querySelectorAll('.breadcrumb[data-path]').forEach(el => {
+        const navigateHandler = () => navigateToPath(JSON.parse(el.dataset.path));
         el.addEventListener('click', navigateHandler);
         el.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' || e.key === ' ') {
@@ -1246,6 +1287,7 @@ function renderBreadcrumbs() {
             }
         });
     });
+    updateNavButtons();
 }
 
 // Apply filters
@@ -1267,51 +1309,22 @@ function applyFilters() {
     }
     window.history.replaceState({ path: currentPath, search: searchInput.value }, '', url);
     
-    filteredDownloads = allDownloads.filter(download => {
-        // Path filter
-        if (currentPath.length > 0) {
-            const pathPrefix = currentPath.join('/');
-            if (!download.Name.startsWith(pathPrefix)) {
-                return false;
-            }
-            // Only show direct children
-            const remainder = download.Name.slice(pathPrefix.length + 1);
-            const slashCount = (remainder.match(/\//g) || []).length;
-            if (slashCount > 0) {
-                return false;
-            }
-        } else {
-            // At root, only show first-level items
-            const slashCount = (download.Name.match(/\//g) || []).length;
-            if (slashCount > 0) {
-                return false;
-            }
-        }
-        
-        // File type filter
-        if (!allFileTypesSelected) {
-            if (activeFileTypes.size === 0) {
-                return false;
-            }
-            const typeInfo = getFileTypeInfo(download);
-            if (!activeFileTypes.has(typeInfo.name)) {
-                return false;
-            }
-        }
-        
-        // Search filter - search in full path
-        if (searchTerm) {
-            const fullPath = download.Name.toLowerCase();
-            
-            if (!matchesSearch(fullPath, searchTerm)) {
-                return false;
-            }
-        }
-        
-        return true;
-    });
+    if (searchTerm) {
+        // Searching replaces the folder view with the container-wide result
+        // list, so the per-folder path pass is skipped entirely: one search
+        // pass feeds the view, the type counts, and the analytics count.
+        buildSearchPool(searchTerm);
+        filteredDownloads = filterByFileTypes(searchPool);
+    } else {
+        const pathDepth = currentPath.length;
+        const pathPrefix = pathDepth > 0 ? currentPath.join('/') + '/' : '';
+        const inCurrentFolder = (download) => pathDepth > 0
+            // Name = prefix + remainder; the remainder must hold no further slash.
+            ? download.Name.startsWith(pathPrefix) && download._slashes - pathDepth <= 0
+            : download._slashes === 0;
+        filteredDownloads = allDownloads.filter(download => inCurrentFolder(download) && typeAllows(download));
+    }
     
-    currentPage = 1; // Reset to first page
     updateFileTypeFilterCounts(); // Update dropdown counts
     displayDownloads();
 }
@@ -1319,7 +1332,9 @@ function applyFilters() {
 // Sort files based on current sort option
 function sortFiles(files) {
     const sorted = [...files];
-    
+    const nameOf = (f) => f.Name.split('/').pop().toLowerCase();
+    const extOf = (f) => (getFileExtension(f.Url) || 'zzz');
+
     switch (sortBy) {
         case 'date-desc':
             sorted.sort((a, b) => new Date(b.LastModified) - new Date(a.LastModified));
@@ -1333,15 +1348,21 @@ function sortFiles(files) {
         case 'size-asc':
             sorted.sort((a, b) => a.Length - b.Length);
             break;
+        case 'name-desc':
+            sorted.sort((a, b) => nameOf(b).localeCompare(nameOf(a)));
+            break;
+        case 'type-asc':
+            sorted.sort((a, b) => extOf(a).localeCompare(extOf(b)) || nameOf(a).localeCompare(nameOf(b)));
+            break;
+        case 'type-desc':
+            sorted.sort((a, b) => extOf(b).localeCompare(extOf(a)) || nameOf(a).localeCompare(nameOf(b)));
+            break;
         case 'name-asc':
-            sorted.sort((a, b) => {
-                const nameA = a.Name.split('/').pop().toLowerCase();
-                const nameB = b.Name.split('/').pop().toLowerCase();
-                return nameA.localeCompare(nameB);
-            });
+        default:
+            sorted.sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
             break;
     }
-    
+
     return sorted;
 }
 
@@ -1353,75 +1374,35 @@ function wildcardToRegex(pattern) {
     const regexPattern = escaped.replace(/\*/g, '.*').replace(/\?/g, '.');
     return new RegExp(regexPattern, 'i');
 }
-
-// Check if search term matches (with wildcard and regex support)
-function matchesSearch(text, searchTerm) {
-    // Regex search: patterns starting with / or ^ are treated as regex
-    const isRegex = searchTerm.startsWith('/') || searchTerm.startsWith('^');
-    
-    if (isRegex) {
-        try {
-            // Remove leading / if present (^ should be kept as it's part of the regex)
-            const regexPattern = searchTerm.startsWith('/') ? searchTerm.slice(1) : searchTerm;
-            const regex = new RegExp(regexPattern, 'i');
-            return regex.test(text);
-        } catch (e) {
-            // Invalid regex, fall back to literal search
-            return text.includes(searchTerm);
+// VS Code-style fuzzy match: query characters must appear in order
+// (greedy earliest match — an optimal test for subsequence existence),
+// scored by contiguity, word-boundary starts, and early position.
+// Returns -1 when not a subsequence; higher-is-better otherwise.
+// ~ is the mode sigil (~~ escapes a literal leading tilde); it exists
+// only in the search box and never alters regex/wildcard/substring
+// behavior for any other query — production pinned searches rely on those.
+function fuzzyScore(query, text) {
+    if (!query) return 0;
+    let score = 0, ti = 0, prev = -2, streak = 0;
+    for (const qc of query) {
+        const found = text.indexOf(qc, ti);
+        if (found === -1) return -1;
+        const atBoundary = found === 0 || /[-_./ ]/.test(text[found - 1]) ||
+            /\d/.test(text[found - 1]) !== /\d/.test(text[found]);
+        if (found === prev + 1) {
+            streak++;
+        } else {
+            streak = 1;
+            if (atBoundary) score += 8;
+            score -= Math.min(4, found - prev - 1); // scattered-gap penalty
         }
+        score += streak * 2;
+        prev = found;
+        ti = found + 1;
     }
-    
-    const hasWildcard = searchTerm.includes('*') || searchTerm.includes('?');
-    
-    if (hasWildcard) {
-        const regex = wildcardToRegex(searchTerm);
-        return regex.test(text);
-    } else {
-        // Regular search with space-insensitive matching
-        const textNoSpaces = text.replace(/\s/g, '');
-        const searchTermNoSpaces = searchTerm.replace(/\s/g, '');
-        return text.includes(searchTerm) || textNoSpaces.includes(searchTermNoSpaces);
-    }
+    return score - Math.round(prev / Math.max(text.length, 1) * 4);
 }
 
-// Render search results
-function renderSearchResults(filteredFiles, searchTerm) {
-    const listEl = document.getElementById('downloadList');
-    const resultCount = document.getElementById('resultCount');
-    
-    // Sort the files
-    const sortedFiles = sortFiles(filteredFiles);
-    
-    const totalItems = sortedFiles.length;
-    const totalPages = Math.ceil(totalItems / itemsPerPage);
-    
-    updatePagination(totalItems, totalPages);
-    
-    const startIdx = (currentPage - 1) * itemsPerPage;
-    const endIdx = Math.min(startIdx + itemsPerPage, totalItems);
-    const pageItems = sortedFiles.slice(startIdx, endIdx);
-    
-    resultCount.textContent = `${totalItems} matching file${totalItems !== 1 ? 's' : ''} (showing ${startIdx + 1}-${endIdx})`;
-    
-    if (totalItems === 0) {
-        listEl.innerHTML = '<div class="no-results">No files found matching "' + searchTerm + '"</div>';
-        document.getElementById('paginationTop').style.display = 'none';
-        document.getElementById('paginationBottom').style.display = 'none';
-        return;
-    }
-    
-    const fragment = document.createDocumentFragment();
-    
-    pageItems.forEach(download => {
-        const itemEl = createDownloadItemElement(download, true);
-        fragment.appendChild(itemEl);
-    });
-    
-    listEl.innerHTML = '';
-    listEl.appendChild(fragment);
-    
-    document.querySelector('.content').scrollTop = 0;
-}
 
 // Helper: Check if a folder contains files matching the active file type filter (recursive)
 // Also filters out folders with no non-zero byte files
@@ -1459,201 +1440,564 @@ function folderHasMatchingFiles(parentPath, folderName) {
     return checkNode(folderPath);
 }
 
-// Display downloads with pagination
+// Build the current view (folders + files, or search hits) and window-render it
 function displayDownloads() {
-    const listEl = document.getElementById('downloadList');
     const resultCount = document.getElementById('resultCount');
     const searchTerm = document.getElementById('searchInput').value.toLowerCase();
-    
+
     // Update breadcrumbs to reflect search state
     renderBreadcrumbs();
-    
+    syncSortHeaders();
+
     // If searching, show all matching files from anywhere
     if (searchTerm) {
-        const filteredFiles = filterDownloads(allDownloads, {
-            searchTerm,
-            fileTypes: activeFileTypes,
-            allTypesSelected: allFileTypesSelected,
-            excludeZeroByte: true
-        });
-        
-        renderSearchResults(filteredFiles, searchTerm);
+        if (searchPoolQuery !== searchTerm) buildSearchPool(searchTerm);
+        const filteredFiles = filterByFileTypes(searchPool);
+        const sorted = sortFiles(filteredFiles);
+        // Fuzzy queries lead with relevance: stable re-sort by score keeps
+        // the column sort as the tie-break within equal scores.
+        const fuzzyQ = searchTerm.startsWith('~') && !searchTerm.startsWith('~~') ? searchTerm.slice(1) : null;
+        if (fuzzyQ) {
+            // Match-in-the-file-name outweighs match-across-the-folder-path,
+            // so ~installer ranks by name, not by lucky folder letters.
+            const score = (name) => {
+                const lower = name.toLowerCase();
+                const base = lower.split('/').pop();
+                return Math.max(fuzzyScore(fuzzyQ, lower), fuzzyScore(fuzzyQ, base) + 12, 0);
+            };
+            const scoreOf = new Map(filteredFiles.map(f => [f.Name, score(f.Name)]));
+            sorted.sort((a, b) => scoreOf.get(b.Name) - scoreOf.get(a.Name));
+        }
+        resultCount.textContent = `${sorted.length.toLocaleString()} result${sorted.length !== 1 ? 's' : ''}`;
+        setView(sorted.map(d => ({ type: 'file', data: d })), true,
+            `<div class="no-results">${FL.empty}No results for “${searchTerm}”.</div>`);
         return;
     }
-    
+
     // Use tree structure for O(1) folder navigation
     const pathKey = currentPath.join('/');
     const node = folderTree.get(pathKey);
-    
+    const empty = `<div class="no-results">${FL.empty}This folder is empty.</div>`;
+
     if (!node) {
-        listEl.innerHTML = '<div class="no-results">Folder not found</div>';
+        resultCount.textContent = '0 items';
+        setView([], false, empty);
         return;
     }
-    
+
     const folders = Array.from(node.folders);
-    
-    // Filter files using shared utility
-    const files = filterDownloads(node.files, {
-        fileTypes: activeFileTypes,
-        allTypesSelected: allFileTypesSelected,
-        excludeZeroByte: true
-    });
-    
+
+    // Zero-byte files hidden, file-type filter applied (the search query
+    // never reaches the folder view - applyFilters routes searching elsewhere).
+    const files = filterByFileTypes(node.files.filter(d => d.Length > 0));
+
     // Filter folders that contain matching files (recursive check)
-    // Always filter to hide empty folders (no non-zero files)
     const filteredFolders = folders.filter(folderName => folderHasMatchingFiles(pathKey, folderName));
-    
+
     // Sort files
     const sortedFiles = sortFiles(files);
-    
-    const allItems = [...filteredFolders.sort().map(f => ({ type: 'folder', name: f })),
-                      ...sortedFiles.map(f => ({ type: 'file', data: f }))];
-    
-    const totalItems = allItems.length;
-    const totalPages = Math.ceil(totalItems / itemsPerPage);
-    
-    // Update pagination
-    updatePagination(totalItems, totalPages);
-    
-    // Calculate pagination
-    const startIdx = (currentPage - 1) * itemsPerPage;
-    const endIdx = Math.min(startIdx + itemsPerPage, totalItems);
-    const pageItems = allItems.slice(startIdx, endIdx);
-    
-    resultCount.textContent = `${totalItems} item${totalItems !== 1 ? 's' : ''} (showing ${startIdx + 1}-${endIdx})`;
-    
-    if (totalItems === 0) {
-        listEl.innerHTML = '<div class="no-results">No downloads found matching your criteria.</div>';
-        document.getElementById('paginationTop').style.display = 'none';
-        document.getElementById('paginationBottom').style.display = 'none';
+
+    // Windows 11 grouping: folders always form a group above the file group,
+    // so a size or date sort never interpolates folders and files. Within its
+    // group, the folder group orders by recursive size / newest descendant
+    // date on the matching sort, otherwise alphabetically in the name
+    const folderItems = filteredFolders.map(f => ({ type: 'folder', name: f, path: pathKey ? pathKey + '/' + f : f }));
+    if (sortBy.startsWith('size') || sortBy.startsWith('date')) {
+        const dir = sortBy.endsWith('desc') ? -1 : 1;
+        const val = p => sortBy.startsWith('size') ? (folderSizes.get(p) || 0) : (folderDates.get(p) || 0);
+        folderItems.sort((a, b) => (val(a.path) - val(b.path)) * dir || a.name.localeCompare(b.name));
+    } else if (sortBy === 'name-desc') {
+        folderItems.sort((a, b) => b.name.localeCompare(a.name));
+    } else {
+        // Type sorts: every folder is the same "File folder" type, so the
+        // group stays alphabetical in both directions.
+        folderItems.sort((a, b) => a.name.localeCompare(b.name));
+    }
+    const items = [...folderItems, ...sortedFiles.map(f => ({ type: 'file', data: f }))];
+
+    resultCount.textContent = `${items.length.toLocaleString()} item${items.length !== 1 ? 's' : ''}`;
+    setView(items, false, empty);
+}
+
+// ---------------------------------------------------------------------------
+// Windowed rendering: only the visible slice (+overscan) of the current view
+// is in the DOM. The list scrolls continuously and the scrollbar thumb
+// conveys total length, so no pager is needed at 100K-file scale.
+// Row geometry is arithmetic: 32px rows in list view, 108x100 tiles in tile
+// view (keep listMetrics() in sync with styles.css).
+// ---------------------------------------------------------------------------
+function setView(items, fromSearch, emptyHtml) {
+    viewItems = items;
+    viewFromSearch = !!fromSearch;
+    emptyMessage = emptyHtml || '';
+    selectedRow = null;
+    selectedKey = null;
+    winStart = winEnd = -1;
+    document.getElementById('tableRows').scrollTop = 0;
+    renderWindow();
+    syncSelectionUI();
+}
+
+function listMetrics() {
+    const scroller = document.getElementById('tableRows');
+    if (viewMode === 'tiles') {
+        const usable = scroller.clientWidth - 20; // container padding: 10px each side
+        const cols = Math.max(1, Math.floor((usable + 2) / 110)); // 108px tile + 2px gap
+        return { cols, cellH: 102, padY: 10 };
+    }
+    // List rows are fixed-height; CSS owns the exact value (32px desktop,
+    // 52px two-line rows at <=620px). Read it so windowing math can't drift.
+    const rowH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--row-h'), 10);
+    return { cols: 1, cellH: Number.isFinite(rowH) && rowH > 0 ? rowH : 32, padY: 4 };
+}
+
+function makeRowEl(item) {
+    if (item.type === 'folder') {
+        const folderEl = document.createElement('div');
+        folderEl.className = 'mrow is-folder';
+        folderEl.setAttribute('role', 'listitem');
+        folderEl.setAttribute('tabindex', '0');
+        folderEl.dataset.path = item.path;
+        folderEl.dataset.name = item.name;
+        folderEl.title = item.name;
+        folderEl.innerHTML = `
+            <span class="m-name"><span class="m-icon">${FL.folder}</span><span class="m-name-text">${item.name}</span></span>
+            <span class="m-date" aria-hidden="true">${folderDates.has(item.path) ? formatDate(new Date(folderDates.get(item.path)).toISOString()) : '—'}</span>
+            <span class="m-type" aria-hidden="true">File folder</span>
+            <span class="m-size" aria-hidden="true">${formatFileSize(folderSizes.get(item.path) || 0)}</span>
+            <span class="m-act"></span>
+        `;
+        bindRow(folderEl, () => navigateToPath(item.path.split('/')));
+        return folderEl;
+    }
+    const rowEl = createDownloadItemElement(item.data, viewFromSearch);
+    bindRow(rowEl, () => triggerDownload(rowEl));
+    return rowEl;
+}
+
+function itemKey(item) {
+    return item.type === 'folder' ? item.path : item.data.Name;
+}
+
+function renderWindow() {
+    const listEl = document.getElementById('tableRows');
+    const N = viewItems.length;
+
+    if (N === 0) {
+        winStart = winEnd = -1;
+        listEl.innerHTML = emptyMessage || `<div class="no-results">${FL.empty}This folder is empty.</div>`;
         return;
     }
-    
-    // Use document fragment for better performance
-    const fragment = document.createDocumentFragment();
-    
-    // Render items
-    pageItems.forEach(item => {
-        if (item.type === 'folder') {
-            const folderEl = document.createElement('div');
-            folderEl.className = 'download-item folder-item-display';
-            folderEl.setAttribute('role', 'listitem');
-            folderEl.innerHTML = `
-                <span class="folder-icon" aria-hidden="true"><span class="icon-folder"></span></span>
-                <div class="download-info">
-                    <div class="download-name">${item.name}</div>
-                </div>
-            `;
-            makeListItemAccessible(folderEl, () => {
-                navigateToPath([...currentPath, item.name]);
-            });
-            fragment.appendChild(folderEl);
-        } else {
-            const itemEl = createDownloadItemElement(item.data, false);
-            fragment.appendChild(itemEl);
-        }
-    });
-    
+
+    const m = listMetrics();
+    const st = listEl.scrollTop;
+    const vh = listEl.clientHeight;
+
+    let start, end;
+    if (m.cols === 1) {
+        start = Math.max(0, Math.floor(st / m.cellH) - 5);
+        end = Math.min(N, Math.ceil((st + vh) / m.cellH) + 5);
+    } else {
+        const tileRowFrom = Math.max(0, Math.floor((st - m.padY) / m.cellH) - 2);
+        const tileRowTo = Math.floor((st + vh - m.padY) / m.cellH) + 3;
+        start = Math.min(N, tileRowFrom * m.cols);
+        end = Math.min(N, tileRowTo * m.cols);
+    }
+
+    if (start === winStart && end === winEnd) return;
+    winStart = start;
+    winEnd = end;
+
+    const frag = document.createDocumentFragment();
+    const top = document.createElement('div');
+    const bottom = document.createElement('div');
+    top.className = 'vspacer';
+    bottom.className = 'vspacer';
+    if (m.cols === 1) {
+        top.style.height = start * m.cellH + 'px';
+        bottom.style.height = (N - end) * m.cellH + 'px';
+    } else {
+        const tileRowsTotal = Math.ceil(N / m.cols);
+        top.style.width = '100%';
+        bottom.style.width = '100%';
+        top.style.height = Math.floor(start / m.cols) * m.cellH + 'px';
+        bottom.style.height = (tileRowsTotal - Math.ceil(end / m.cols)) * m.cellH + 'px';
+    }
+    frag.appendChild(top);
+    for (let i = start; i < end; i++) frag.appendChild(makeRowEl(viewItems[i]));
+    frag.appendChild(bottom);
+
     listEl.innerHTML = '';
-    listEl.appendChild(fragment);
-    
-    // Scroll to top
-    document.querySelector('.content').scrollTop = 0;
+    listEl.appendChild(frag);
+
+    if (selectedKey) {
+        const sel = listEl.querySelector(`.mrow[data-path="${CSS.escape(selectedKey)}"]`);
+        if (sel) {
+            sel.classList.add('selected');
+            selectedRow = sel;
+        } else {
+            selectedRow = null;
+        }
+    }
 }
 
-// Update pagination controls
-function updatePagination(totalItems, totalPages) {
-    const paginationTop = document.getElementById('paginationTop');
-    const paginationBottom = document.getElementById('paginationBottom');
-    
-    if (totalPages <= 1) {
-        paginationTop.style.display = 'none';
-        paginationBottom.style.display = 'none';
+function ensureIndexVisible(idx) {
+    const listEl = document.getElementById('tableRows');
+    const m = listMetrics();
+    const line = m.cols === 1 ? idx : Math.floor(idx / m.cols);
+    const top = m.padY + line * m.cellH;
+    const bottom = top + m.cellH;
+    const st = listEl.scrollTop;
+    const vh = listEl.clientHeight;
+    if (top < st + m.padY) listEl.scrollTop = top - m.padY;
+    else if (bottom > st + vh - 8) listEl.scrollTop = bottom - vh + 8;
+}
+
+function focusIndex(idx) {
+    if (idx < 0 || idx >= viewItems.length) return;
+    ensureIndexVisible(idx);
+    renderWindow();
+    const key = itemKey(viewItems[idx]);
+    const el = document.querySelector(`#tableRows .mrow[data-path="${CSS.escape(key)}"]`);
+    if (el) el.focus();
+}
+
+function initializeVirtualScroll() {
+    const listEl = document.getElementById('tableRows');
+    let scheduled = false;
+    listEl.addEventListener('scroll', () => {
+        if (scheduled) return;
+        scheduled = true;
+        requestAnimationFrame(() => {
+            scheduled = false;
+            renderWindow();
+        });
+    }, { passive: true });
+    if (typeof ResizeObserver !== 'undefined') {
+        new ResizeObserver(() => renderWindow()).observe(listEl);
+    }
+}
+
+// Row interaction: single click selects, double click opens (Explorer model);
+// on touch devices a single tap opens.
+function bindRow(rowEl, openFn) {
+    if (IS_TOUCH) {
+        rowEl.addEventListener('click', (e) => {
+            if (e.target.closest('button')) return;
+            openFn();
+        });
+    } else {
+        rowEl.addEventListener('click', (e) => {
+            if (e.target.closest('button')) return;
+            selectRow(rowEl);
+        });
+        rowEl.addEventListener('dblclick', (e) => {
+            if (e.target.closest('button')) return;
+            openFn();
+        });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Selection + command bar + details pane
+// ---------------------------------------------------------------------------
+function selectRow(rowEl) {
+    if (selectedRow && selectedRow !== rowEl) selectedRow.classList.remove('selected');
+    selectedRow = rowEl;
+    selectedKey = rowEl.dataset.path || null;
+    rowEl.classList.add('selected');
+    syncSelectionUI();
+}
+
+function clearSelection() {
+    if (selectedRow) {
+        selectedRow.classList.remove('selected');
+        selectedRow = null;
+    }
+    selectedKey = null;
+    syncSelectionUI();
+}
+
+function syncSelectionUI() {
+    const status = document.getElementById('statusSelection');
+    const cmdCopy = document.getElementById('cmdCopy');
+    const cmdDownload = document.getElementById('cmdDownload');
+    const isFile = selectedRow && !selectedRow.classList.contains('is-folder');
+    if (status) status.textContent = selectedRow ? '1 item selected' : '';
+    if (cmdCopy) cmdCopy.disabled = !isFile;
+    if (cmdDownload) cmdDownload.disabled = !isFile;
+    renderDetailsPane();
+}
+
+function triggerCopy(rowEl) {
+    const btn = rowEl.querySelector('.copy-link-button');
+    const url = btn ? btn.dataset.url : rowEl.dataset.url;
+    const filePath = rowEl.dataset.path;
+    if (!url || !filePath) return;
+    const fileName = filePath.split('/').pop();
+    BlobExplorerAnalytics.copyLink(fileName, filePath);
+    copyToClipboard(url, btn, 'Link copied to clipboard');
+}
+
+function triggerDownload(rowEl) {
+    const url = rowEl.dataset.url;
+    const filePath = rowEl.dataset.path;
+    if (!url || !filePath) return;
+    const fileName = filePath.split('/').pop();
+    const download = allDownloads.find(d => d.Name === filePath);
+    const fileSize = download ? download.Length : 0;
+    const typeInfo = download ? getFileTypeInfo(download) : { name: 'Unknown' };
+    BlobExplorerAnalytics.download(fileName, filePath, fileSize, typeInfo.name);
+    window.open(url, '_blank');
+}
+
+function renderDetailsPane() {
+    const pane = document.getElementById('detailsPane');
+    if (!pane || pane.hidden) return;
+    const empty = document.getElementById('detailsEmpty');
+    const body = document.getElementById('detailsBody');
+    if (!selectedRow) {
+        empty.hidden = false;
+        body.hidden = true;
+        body.innerHTML = '';
         return;
     }
-    
-    paginationTop.style.display = 'flex';
-    paginationBottom.style.display = 'flex';
-    
-    // Update both pagination controls
-    [paginationTop, paginationBottom].forEach((pagination, idx) => {
-        const pageInfo = pagination.querySelector('span');
-        const firstBtn = pagination.querySelector('button:nth-child(1)');
-        const prevBtn = pagination.querySelector('button:nth-child(2)');
-        const nextBtn = pagination.querySelector('button:nth-child(4)');
-        const lastBtn = pagination.querySelector('button:nth-child(5)');
-        
-        pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
-        
-        firstBtn.disabled = currentPage === 1;
-        prevBtn.disabled = currentPage === 1;
-        nextBtn.disabled = currentPage === totalPages;
-        lastBtn.disabled = currentPage === totalPages;
-    });
+    empty.hidden = true;
+    body.hidden = false;
+    const d = selectedRow.dataset;
+
+    if (selectedRow.classList.contains('is-folder')) {
+        const node = folderTree.get(d.path) || { folders: new Set(), files: [] };
+        body.innerHTML = `
+            <div class="details-ico">${FL.folder}</div>
+            <div class="details-name">${d.name}</div>
+            <div class="details-type">File folder</div>
+            <dl>
+                <div class="detail-row"><dt>Date modified</dt><dd>${folderDates.has(d.path) ? formatDate(new Date(folderDates.get(d.path)).toISOString()) : '—'}</dd></div>
+                <div class="detail-row"><dt>Size</dt><dd>${formatFileSize(folderSizes.get(d.path) || 0)}</dd></div>
+                <div class="detail-row"><dt>Location</dt><dd>${currentPath.length ? '/' + currentPath.join('/') : '/ (root)'}</dd></div>
+                <div class="detail-row"><dt>Contains</dt><dd>${node.folders.size} folder${node.folders.size !== 1 ? 's' : ''}, ${node.files.length} file${node.files.length !== 1 ? 's' : ''}</dd></div>
+            </dl>
+            <div class="detail-actions"><button type="button" id="detailOpen">${FL.open}<span>Open</span></button></div>
+        `;
+        body.querySelector('#detailOpen').addEventListener('click', () => navigateToPath(d.path.split('/')));
+    } else {
+        const typeInfo = getFileTypeInfo({ Url: d.url, Name: d.path, ContentType: '' });
+        const location = d.path.includes('/') ? '/' + d.path.split('/').slice(0, -1).join('/') : '/ (root)';
+        body.innerHTML = `
+            <div class="details-ico" style="color:${typeInfo.color}">${typeInfo.icon}</div>
+            <div class="details-name">${d.name}</div>
+            <div class="details-type">${d.type || typeInfo.name}</div>
+            <dl>
+                <div class="detail-row"><dt>Date modified</dt><dd>${formatDate(d.date)}</dd></div>
+                <div class="detail-row"><dt>Size</dt><dd>${formatFileSize(Number(d.length))}</dd></div>
+                <div class="detail-row"><dt>Location</dt><dd>${location}</dd></div>
+            </dl>
+            <div class="detail-url">${d.url}</div>
+            <div class="detail-actions">
+                <button type="button" id="detailCopy">${FL.copy}<span>Copy link</span></button>
+                <button type="button" id="detailDownload">${FL.download}<span>Download</span></button>
+            </div>
+        `;
+        body.querySelector('#detailCopy').addEventListener('click', () => triggerCopy(selectedRow));
+        body.querySelector('#detailDownload').addEventListener('click', () => triggerDownload(selectedRow));
+    }
 }
 
-// Get total items for current view (used by pagination)
-function getCurrentViewItemCount() {
-    const searchTerm = document.getElementById('searchInput').value;
-    
-    if (searchTerm) {
-        // During search, count all matching files
-        return filterDownloads(allDownloads, {
-            searchTerm,
-            fileTypes: activeFileTypes,
-            allTypesSelected: allFileTypesSelected,
-            excludeZeroByte: true
-        }).length;
-    }
-    
-    // Folder view - count folders + files
-    const pathKey = currentPath.join('/');
+// ---------------------------------------------------------------------------
+// Navigation pane folder tree
+// ---------------------------------------------------------------------------
+// The folder tree is an admin opt-in (config.json showFoldersNav or
+// SHOW_FOLDERS_NAV=true); the sidebar's default contract is Home + Pinned.
+function foldersNavEnabled() {
+    return typeof window.APP_CONFIG !== 'undefined' && window.APP_CONFIG.showFoldersNav === true;
+}
+
+function renderFolderNav() {
+    const section = document.querySelector('.nav-folders');
+    const nav = document.getElementById('folderNav');
+    if (!nav) return;
+    const enabled = foldersNavEnabled();
+    if (section) section.hidden = !enabled;
+    nav.innerHTML = '';
+    if (!enabled || !allDownloads.length) return;
+    nav.appendChild(buildTreeLevel(''));
+    markActiveTree();
+}
+
+function buildTreeLevel(pathKey) {
     const node = folderTree.get(pathKey);
-    if (!node) return 0;
-    
-    const folders = Array.from(node.folders);
-    const files = filterDownloads(node.files, {
-        fileTypes: activeFileTypes,
-        allTypesSelected: allFileTypesSelected,
-        excludeZeroByte: true
+    const frag = document.createDocumentFragment();
+    if (!node || node.folders.size === 0) return frag;
+
+    Array.from(node.folders).sort((a, b) => a.localeCompare(b)).forEach(name => {
+        const childPath = pathKey ? pathKey + '/' + name : name;
+        const childNode = folderTree.get(childPath);
+        const hasChildren = childNode && childNode.folders.size > 0;
+
+        const branch = document.createElement('div');
+        branch.className = 'tree-branch';
+        branch.dataset.path = childPath;
+        branch.setAttribute('aria-expanded', treeExpanded.has(childPath) ? 'true' : 'false');
+
+        const label = document.createElement('div');
+        label.className = 'tree-label';
+        label.setAttribute('role', 'treeitem');
+        label.tabIndex = 0;
+        label.innerHTML = `${FL.folder}<span class="fav-name">${name}</span>`;
+        label.addEventListener('click', () => {
+            if (hasChildren && !treeExpanded.has(childPath)) toggleTreeBranch(childPath);
+            navigateToPath(childPath.split('/'));
+        });
+        label.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); label.click(); }
+        });
+        branch.appendChild(label);
+
+        if (hasChildren) {
+            const twisty = document.createElement('button');
+            twisty.type = 'button';
+            twisty.className = 'tree-twisty';
+            twisty.setAttribute('aria-label', (treeExpanded.has(childPath) ? 'Collapse ' : 'Expand ') + name);
+            twisty.innerHTML = '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M3 1.5 7 5l-4 3.5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+            twisty.addEventListener('click', (e) => { e.stopPropagation(); toggleTreeBranch(childPath); });
+            branch.appendChild(twisty);
+
+            if (treeExpanded.has(childPath)) {
+                const kids = document.createElement('div');
+                kids.className = 'tree-children';
+                kids.appendChild(buildTreeLevel(childPath));
+                branch.appendChild(kids);
+            }
+        }
+        frag.appendChild(branch);
     });
-    
-    const filteredFolders = folders.filter(folderName => folderHasMatchingFiles(pathKey, folderName));
-    return filteredFolders.length + files.length;
+    return frag;
 }
 
-// Navigate pages
-function goToPage(page) {
-    currentPage = page;
+function toggleTreeBranch(pathKey) {
+    if (treeExpanded.has(pathKey)) treeExpanded.delete(pathKey);
+    else treeExpanded.add(pathKey);
+    saveTreeExpanded();
+    renderFolderNav();
+}
+
+function syncFolderTree() {
+    let acc = '';
+    currentPath.forEach(seg => {
+        acc = acc ? acc + '/' + seg : seg;
+        treeExpanded.add(acc);
+    });
+    saveTreeExpanded();
+    renderFolderNav();
+}
+
+function markActiveTree() {
+    const key = currentPath.join('/');
+    const homeEl = document.getElementById('homeLink');
+    if (homeEl) homeEl.classList.toggle('active', !key);
+    document.querySelectorAll('#folderNav .tree-label').forEach(l => l.classList.remove('active'));
+    if (!key) return;
+    const active = document.querySelector(`#folderNav .tree-branch[data-path="${CSS.escape(key)}"] > .tree-label`);
+    if (active) active.classList.add('active');
+}
+
+// ---------------------------------------------------------------------------
+// View modes, sort headers, explorer chrome wiring
+// ---------------------------------------------------------------------------
+function applyViewMode() {
+    const card = document.getElementById('downloadList');
+    if (!card) return;
+    card.classList.toggle('tiles', viewMode === 'tiles');
+    const bList = document.getElementById('viewListBtn');
+    const bTiles = document.getElementById('viewTilesBtn');
+    bList.classList.toggle('active', viewMode === 'list');
+    bList.setAttribute('aria-pressed', String(viewMode === 'list'));
+    bTiles.classList.toggle('active', viewMode === 'tiles');
+    bTiles.setAttribute('aria-pressed', String(viewMode === 'tiles'));
+    renderWindow(); // window geometry differs between rows and tiles
+}
+
+function applyDetailsPane() {
+    const pane = document.getElementById('detailsPane');
+    if (!pane) return;
+    pane.hidden = !detailsOpen;
+    const toggle = document.getElementById('detailsToggle');
+    if (toggle) toggle.setAttribute('aria-pressed', String(detailsOpen));
+    renderDetailsPane();
+}
+
+function updateNavButtons() {
+    const up = document.getElementById('upButton');
+    const back = document.getElementById('backButton');
+    if (up) up.disabled = currentPath.length === 0;
+    if (back) back.disabled = navDepth === 0;
+}
+
+function syncSortHeaders() {
+    document.querySelectorAll('.list-head .col[data-sort]').forEach(col => {
+        const key = col.dataset.sort;
+        const active = sortBy.startsWith(key);
+        col.classList.toggle('sorted', active);
+        col.classList.toggle('desc', active && sortBy.endsWith('-desc'));
+        col.setAttribute('aria-sort', active ? (sortBy.endsWith('-desc') ? 'descending' : 'ascending') : 'none');
+    });
+}
+
+function applySort(value) {
+    sortBy = value;
+    const sel = document.getElementById('sortBy');
+    if (sel) sel.value = sortBy;
+    syncSortHeaders();
     displayDownloads();
 }
 
-function nextPage() {
-    const totalItems = getCurrentViewItemCount();
-    const totalPages = Math.ceil(totalItems / itemsPerPage);
-    if (currentPage < totalPages) {
-        currentPage++;
-        displayDownloads();
-    }
+function cycleSort(key) {
+    const next = { name: 'name-asc', date: 'date-desc', size: 'size-desc', type: 'type-asc' };
+    const flip = { 'name-asc': 'name-desc', 'name-desc': 'name-asc', 'date-desc': 'date-asc', 'date-asc': 'date-desc', 'size-desc': 'size-asc', 'size-asc': 'size-desc', 'type-asc': 'type-desc', 'type-desc': 'type-asc' };
+    applySort(sortBy.startsWith(key) ? flip[sortBy] : next[key]);
 }
 
-function prevPage() {
-    if (currentPage > 1) {
-        currentPage--;
-        displayDownloads();
-    }
-}
+function initExplorerChrome() {
+    applyViewMode();
+    applyDetailsPane();
+    updateNavButtons();
+    syncSortHeaders();
+    syncSelectionUI();
 
-function firstPage() {
-    currentPage = 1;
-    displayDownloads();
-}
-
-function lastPage() {
-    const totalItems = getCurrentViewItemCount();
-    const totalPages = Math.ceil(totalItems / itemsPerPage);
-    currentPage = totalPages;
-    displayDownloads();
+    document.getElementById('viewListBtn').addEventListener('click', () => {
+        viewMode = 'list';
+        localStorage.setItem('explorerView', 'list');
+        applyViewMode();
+    });
+    document.getElementById('viewTilesBtn').addEventListener('click', () => {
+        viewMode = 'tiles';
+        localStorage.setItem('explorerView', 'tiles');
+        applyViewMode();
+    });
+    document.getElementById('detailsToggle').addEventListener('click', () => {
+        detailsOpen = !detailsOpen;
+        localStorage.setItem('explorerDetails', detailsOpen ? 'on' : 'off');
+        applyDetailsPane();
+    });
+    document.getElementById('cmdCopy').addEventListener('click', () => {
+        if (selectedRow && !selectedRow.classList.contains('is-folder')) triggerCopy(selectedRow);
+    });
+    document.getElementById('cmdDownload').addEventListener('click', () => {
+        if (selectedRow && !selectedRow.classList.contains('is-folder')) triggerDownload(selectedRow);
+    });
+    document.getElementById('cmdPin').addEventListener('click', openPinForCurrentView);
+    document.getElementById('backButton').addEventListener('click', () => history.back());
+    document.getElementById('upButton').addEventListener('click', () => {
+        if (currentPath.length) navigateToPath(currentPath.slice(0, -1));
+    });
+    document.querySelectorAll('.list-head .col[data-sort]').forEach(col => {
+        col.addEventListener('click', () => cycleSort(col.dataset.sort));
+    });
+    document.getElementById('tableRows').addEventListener('focusin', (e) => {
+        const row = e.target.closest('.mrow');
+        if (row) selectRow(row);
+    });
 }
 
 // ============================================================================
@@ -1675,18 +2019,40 @@ function showToast(message) {
     setTimeout(() => toast.remove(), 3000);
 }
 
+// Open the pin modal for the current folder or query
+function openPinForCurrentView() {
+    const searchInput = document.getElementById('searchInput');
+    const searchQuery = searchInput ? searchInput.value.trim() : '';
+
+    if (searchQuery) {
+        openPinModal('add', { type: 'search', query: searchQuery, name: searchQuery });
+    } else if (currentPath.length > 0) {
+        const folderName = currentPath[currentPath.length - 1];
+        openPinModal('add', { type: 'folder', path: [...currentPath], name: folderName });
+    } else {
+        showToast('Open a folder or run a query first');
+    }
+}
+
+
 // Copy text to clipboard with button feedback
-async function copyToClipboard(text, button, originalText, successMessage) {
+async function copyToClipboard(text, button, successMessage) {
+    const feedback = () => {
+        if (button) {
+            const original = button.innerHTML;
+            button.classList.add('copied');
+            button.innerHTML = FL.check;
+            setTimeout(() => {
+                button.classList.remove('copied');
+                button.innerHTML = original;
+            }, 1500);
+        }
+        if (successMessage) showToast(successMessage);
+    };
+
     try {
         await navigator.clipboard.writeText(text);
-        button.innerHTML = '✓ Copied!';
-        button.classList.add('copied');
-        if (successMessage) showToast(successMessage);
-        
-        setTimeout(() => {
-            button.innerHTML = originalText;
-            button.classList.remove('copied');
-        }, 2000);
+        feedback();
     } catch (err) {
         // Fallback for older browsers
         const textArea = document.createElement('textarea');
@@ -1695,21 +2061,14 @@ async function copyToClipboard(text, button, originalText, successMessage) {
         textArea.style.left = '-9999px';
         document.body.appendChild(textArea);
         textArea.select();
-        
+
         try {
             document.execCommand('copy');
-            button.innerHTML = '✓ Copied!';
-            button.classList.add('copied');
-            if (successMessage) showToast(successMessage);
-            
-            setTimeout(() => {
-                button.innerHTML = originalText;
-                button.classList.remove('copied');
-            }, 2000);
+            feedback();
         } catch (e) {
             showToast('Failed to copy');
         }
-        
+
         document.body.removeChild(textArea);
     }
 }
@@ -1781,24 +2140,8 @@ function initializeSearch(updateClearButtonVisibility) {
     });
 }
 
-// Initialize pagination controls
-function initializePagination() {
-    const paginationButtons = [
-        { id: 'firstPage', handler: firstPage },
-        { id: 'prevPage', handler: prevPage },
-        { id: 'nextPage', handler: nextPage },
-        { id: 'lastPage', handler: lastPage },
-        { id: 'firstPageBottom', handler: firstPage },
-        { id: 'prevPageBottom', handler: prevPage },
-        { id: 'nextPageBottom', handler: nextPage },
-        { id: 'lastPageBottom', handler: lastPage }
-    ];
-    
-    paginationButtons.forEach(({ id, handler }) => {
-        document.getElementById(id).addEventListener('click', handler);
-    });
-    
-    // Sort dropdown
+// Initialize sort dropdown (cycleSort keeps its value in sync)
+function initializeSortSelect() {
     document.getElementById('sortBy').addEventListener('change', (e) => {
         sortBy = e.target.value;
         displayDownloads();
@@ -1812,14 +2155,14 @@ function initializeFilterDropdown() {
     
     filterDropdownBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const isOpen = filterDropdown.classList.toggle('show');
+        const isOpen = filterDropdown.classList.toggle('active');
         filterDropdownBtn.setAttribute('aria-expanded', isOpen);
     });
     
     // Close dropdown when clicking outside
     document.addEventListener('click', (e) => {
         if (!e.target.closest('.custom-dropdown')) {
-            filterDropdown.classList.remove('show');
+            filterDropdown.classList.remove('active');
             filterDropdownBtn.setAttribute('aria-expanded', 'false');
         }
     });
@@ -1830,11 +2173,30 @@ function initializeFilterDropdown() {
     });
 }
 
+// Desktop navigation-pane collapse. The preference persists across visits;
+// mobile (<=768px) keeps the slide-over and ignores this state.
+function setNavOpen(open, moveFocus = true) {
+    navOpen = open;
+    localStorage.setItem('explorerNav', open ? 'on' : 'off');
+    document.querySelector('.explorer').classList.toggle('nav-collapsed', !open);
+    document.getElementById('navCollapse').setAttribute('aria-expanded', String(open));
+    if (moveFocus) {
+        const target = document.getElementById(open ? 'navCollapse' : 'navRestore');
+        if (target) target.focus();
+    }
+    renderWindow(); // tile column count depends on scroller width
+}
 // Initialize mobile sidebar
 function initializeSidebar() {
     const sidebarToggle = document.getElementById('sidebarToggle');
     const sidebar = document.getElementById('sidebar');
     const sidebarOverlay = document.getElementById('sidebarOverlay');
+    document.getElementById('navCollapse').addEventListener('click', () => setNavOpen(false));
+    document.getElementById('navRestore').addEventListener('click', () => setNavOpen(true));
+    if (!navOpen) {
+        document.querySelector('.explorer').classList.add('nav-collapsed');
+        document.getElementById('navCollapse').setAttribute('aria-expanded', 'false');
+    }
     
     function openSidebar() {
         sidebar.classList.add('active');
@@ -1873,23 +2235,16 @@ function initializeSidebar() {
 // Initialize back to top button
 function initializeBackToTop() {
     const backToTopBtn = document.getElementById('backToTop');
-    const content = document.querySelector('.content');
-    
+    const listEl = document.getElementById('tableRows');
+
     function checkScrollPosition() {
-        const scrollTop = content ? content.scrollTop : window.scrollY;
-        backToTopBtn.classList.toggle('visible', scrollTop > 300);
+        backToTopBtn.classList.toggle('visible', listEl.scrollTop > 300);
     }
-    
-    if (content) {
-        content.addEventListener('scroll', checkScrollPosition);
-    }
-    window.addEventListener('scroll', checkScrollPosition);
-    
+
+    listEl.addEventListener('scroll', checkScrollPosition, { passive: true });
+
     backToTopBtn.addEventListener('click', () => {
-        if (content) {
-            content.scrollTo({ top: 0, behavior: 'smooth' });
-        }
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        listEl.scrollTo({ top: 0, behavior: 'smooth' });
     });
 }
 
@@ -2004,74 +2359,260 @@ function initializePinModal() {
     });
 }
 
-// Initialize keyboard shortcuts
+// Initialize keyboard shortcuts — the full power-key layer.
+// Arrows and vim-style j/k move rows; Enter and l open; h and Backspace
+// go up; Home/End jump; PageUp/PageDown scroll; / focuses query; ? opens help.
 function initializeKeyboardShortcuts(searchInput, helpModal, closeHelpModal, closeSidebar, updateClearButtonVisibility) {
     const sidebar = document.getElementById('sidebar');
     const pinModal = document.getElementById('pinModal');
-    
+    const settingsModal = document.getElementById('settingsModal');
+
+    function anyModalActive() {
+        return pinModal.classList.contains('active')
+            || helpModal.classList.contains('active')
+            || settingsModal.classList.contains('active');
+    }
+
+    function moveRow(dir) {
+        const N = viewItems.length;
+        if (!N) return;
+        let idx = -1;
+        if (selectedKey) idx = viewItems.findIndex(it => itemKey(it) === selectedKey);
+        const next = idx === -1
+            ? (dir > 0 ? 0 : N - 1)
+            : Math.min(N - 1, Math.max(0, idx + dir));
+        focusIndex(next);
+    }
+
+    function jumpRow(idx) {
+        focusIndex(idx);
+    }
+
+    function scrollPage(dir) {
+        const listEl = document.getElementById('tableRows');
+        listEl.scrollBy({ top: dir * (listEl.clientHeight - 64), behavior: 'smooth' });
+    }
+
+    function openRow(rowEl) {
+        if (!rowEl) return false;
+        if (rowEl.classList.contains('is-folder')) {
+            navigateToPath(rowEl.dataset.path.split('/'));
+            return true;
+        }
+        triggerDownload(rowEl);
+        return true;
+    }
+
+    // Two-key sort chord: comma arms a sort flyout above the
+    // status bar; the next key applies the sort (uppercase reverses).
+    const sortHint = document.getElementById('sortHint');
+    const SORT_CHORD_KEYS = {
+        a: 'name-asc', A: 'name-desc',
+        e: 'type-asc', E: 'type-desc',
+        m: 'date-asc', M: 'date-desc',
+        s: 'size-asc', S: 'size-desc'
+    };
+    let sortPending = false;
+    let sortHideTimer = null;
+    function showSortHint() {
+        sortPending = true;
+        sortHint.hidden = false;
+        clearTimeout(sortHideTimer);
+        sortHideTimer = setTimeout(hideSortHint, 5000);
+    }
+    function hideSortHint() {
+        sortPending = false;
+        sortHint.hidden = true;
+        clearTimeout(sortHideTimer);
+    }
     document.addEventListener('keydown', (e) => {
-        const isInputFocused = document.activeElement.tagName === 'INPUT' || 
-                               document.activeElement.tagName === 'TEXTAREA';
-        
-        // "/" - Focus search
-        if (e.key === '/' && !isInputFocused) {
+        const active = document.activeElement;
+        const typing = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT' || active.isContentEditable);
+        // Enter inside the search box: commit the query and hand focus back
+        // to the page, so the vim keys and sort chords work immediately.
+        if (e.key === 'Enter' && active === searchInput && !anyModalActive()) {
+            e.preventDefault();
+            applyFilters();
+            searchInput.blur();
+            return;
+        }
+
+        // Explorer command chords
+        if ((e.ctrlKey || e.metaKey) && !e.altKey && !typing) {
+            if (e.key === 'c' || e.key === 'C') {
+                if (selectedRow && !selectedRow.classList.contains('is-folder')) {
+                    e.preventDefault();
+                    triggerCopy(selectedRow);
+                }
+                return;
+            }
+            if (e.key === 'p' || e.key === 'P') {
+                e.preventDefault();
+                openPinForCurrentView();
+                return;
+            }
+            if (e.key === 'b' || e.key === 'B') {
+                e.preventDefault();
+                setNavOpen(!navOpen);
+                return;
+            }
+        }
+        if (e.altKey && e.key === 'ArrowLeft') {
+            e.preventDefault();
+            history.back();
+            return;
+        }
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+        // "/" - focus search
+        if (e.key === '/' && !typing && !anyModalActive()) {
             e.preventDefault();
             searchInput.focus();
+            searchInput.select();
+            return;
         }
-        
-        // Escape - Clear search or close sidebar/modal
+
+        // Escape - close modal / sidebar, or clear the query
         if (e.key === 'Escape') {
-            if (pinModal.classList.contains('active')) {
+            if (sortPending) {
+                hideSortHint();
+            } else if (pinModal.classList.contains('active')) {
                 closePinModal();
             } else if (helpModal.classList.contains('active')) {
                 closeHelpModal();
             } else if (sidebar.classList.contains('active')) {
                 closeSidebar();
-            } else if (searchInput.value && !isInputFocused) {
+            } else if (searchInput.value && !typing) {
                 searchInput.value = '';
                 updateClearButtonVisibility();
                 applyFilters();
                 searchInput.blur();
-            } else if (isInputFocused) {
+            } else if (typing) {
                 document.activeElement.blur();
             }
+            return;
+        }
+
+        if (anyModalActive() || typing) return;
+
+        if (e.key === '?') {
+            e.preventDefault();
+            document.getElementById('helpButton').click();
+            return;
+        }
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            moveRow(1);
+            return;
+        }
+        if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            moveRow(-1);
+            return;
+        }
+        if (e.key === 'Home') {
+            e.preventDefault();
+            jumpRow(0);
+            return;
+        }
+        if (e.key === 'End') {
+            e.preventDefault();
+            jumpRow(viewItems.length - 1);
+            return;
+        }
+        if (e.key === 'PageDown') {
+            e.preventDefault();
+            scrollPage(1);
+            return;
+        }
+        if (e.key === 'PageUp') {
+            e.preventDefault();
+            scrollPage(-1);
+            return;
+        }
+        if (e.key === 'Backspace') {
+            if (currentPath.length) {
+                e.preventDefault();
+                navigateToPath(currentPath.slice(0, -1));
+            }
+            return;
+        }
+        // Sort-chord resolution: while the flyout is up the next key picks
+        // the sort; any other key cancels. Bare
+        // modifier keydowns pass through untouched - Shift arrives as its
+        // own keydown before the uppercase sort letter, so cancelling on it
+        // would break Shift+A (etc.) on a physical keyboard.
+        if (sortPending) {
+            if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Alt' ||
+                e.key === 'Meta' || e.key === 'CapsLock' || e.key === 'AltGraph') return;
+            e.preventDefault();
+            hideSortHint();
+            if (SORT_CHORD_KEYS[e.key]) applySort(SORT_CHORD_KEYS[e.key]);
+            return;
+        }
+        if (e.key === ',') {
+            e.preventDefault();
+            showSortHint();
+            return;
+        }
+        // Vim-style bindings (all suppressed while typing or when a modal is up).
+        // j/k mirror the arrow keys; l enters the selected folder (no-op on a
+        // file); h goes up one level.
+        if (e.key === 'j' || e.key === 'J') {
+            e.preventDefault();
+            moveRow(1);
+            return;
+        }
+        if (e.key === 'k' || e.key === 'K') {
+            e.preventDefault();
+            moveRow(-1);
+            return;
+        }
+        if (e.key === 'l' || e.key === 'L') {
+            if (selectedRow && selectedRow.classList.contains('is-folder')) {
+                e.preventDefault();
+                openRow(selectedRow);
+            }
+            return;
+        }
+        if (e.key === 'h' || e.key === 'H') {
+            if (currentPath.length) {
+                e.preventDefault();
+                navigateToPath(currentPath.slice(0, -1));
+            }
+            return;
+        }
+        if (e.key === 'Enter' || e.key === ' ') {
+            const rowEl = active && active.closest ? active.closest('.mrow') : null;
+            if (rowEl) {
+                e.preventDefault();
+                openRow(rowEl);
+            }
+            return;
         }
     });
 }
 
 // Initialize copy button handlers (event delegation)
 function initializeCopyHandlers() {
-    // Link copy button handler
-    document.addEventListener('click', async (e) => {
+    // Link copy button handler (event delegation)
+    document.addEventListener('click', (e) => {
         const copyBtn = e.target.closest('.copy-link-button');
         if (copyBtn) {
             e.preventDefault();
             e.stopPropagation();
-            const filePath = copyBtn.dataset.path;
-            const fileName = filePath ? filePath.split('/').pop() : '';
-            if (filePath) {
-                BlobExplorerAnalytics.copyLink(fileName, filePath);
-            }
-            copyToClipboard(copyBtn.dataset.url, copyBtn, '<span class="icon-copy"></span> Copy Link', 'Link copied to clipboard!');
+            copyToClipboard(copyBtn.dataset.url, copyBtn, 'Link copied to clipboard');
         }
     });
-    
+
     // Download button handler (event delegation)
     document.addEventListener('click', (e) => {
         const downloadBtn = e.target.closest('.download-button');
         if (downloadBtn) {
             e.preventDefault();
-            const url = downloadBtn.dataset.url;
-            const filePath = downloadBtn.dataset.path;
-            if (url && filePath) {
-                // Track the download
-                const fileName = filePath.split('/').pop();
-                const download = allDownloads.find(d => d.Name === filePath);
-                const fileSize = download ? download.Length : 0;
-                const typeInfo = download ? getFileTypeInfo(download) : { name: 'Unknown' };
-                BlobExplorerAnalytics.download(fileName, filePath, fileSize, typeInfo.name);
-                window.open(url, '_blank');
-            }
+            e.stopPropagation();
+            const fakeRow = { dataset: { url: downloadBtn.dataset.url, path: downloadBtn.dataset.path } };
+            triggerDownload(fakeRow);
         }
     });
 }
@@ -2231,7 +2772,7 @@ async function fetchBlobsFromUrl(baseUrl, onProgress) {
 
 // Load data from custom URL
 async function loadDataFromCustomUrl(customUrl) {
-    const loadingEl = document.getElementById('downloadList');
+    const loadingEl = document.getElementById('tableRows');
     
     try {
         loadingEl.innerHTML = '<div class="loading">Connecting to storage...</div>';
@@ -2247,7 +2788,7 @@ async function loadDataFromCustomUrl(customUrl) {
         }
         
         // Clear existing data
-        allDownloads = blobs;
+        allDownloads = prepareDownloads(blobs);
         filteredDownloads = [...allDownloads];
         
         // Rebuild optimized data structures
@@ -2264,12 +2805,13 @@ async function loadDataFromCustomUrl(customUrl) {
         renderFavorites();
         displayDownloads();
         
-        // Update last updated display
+        // Update stamped display + header fields
         const lastUpdatedEl = document.getElementById('lastUpdated');
         if (lastUpdatedEl) {
-            lastUpdatedEl.textContent = 'Custom storage loaded just now';
-            lastUpdatedEl.title = new Date().toLocaleString();
+            lastUpdatedEl.textContent = 'just now';
+            lastUpdatedEl.title = 'Last stamped ' + new Date().toLocaleString();
         }
+        renderFolderNav();
         
         return { success: true, count: blobs.length };
         
@@ -2416,7 +2958,7 @@ function initializeSettingsModal() {
 
 document.addEventListener('DOMContentLoaded', () => {
     const searchInput = document.getElementById('searchInput');
-    const searchBar = searchInput.closest('.search-bar');
+    const searchBar = searchInput.closest('.search-box');
     
     // Helper to toggle clear button visibility
     function updateClearButtonVisibility() {
@@ -2431,10 +2973,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Explorer chrome: view mode, details pane, commands, sort headers
+    initExplorerChrome();
+
     // Initialize all UI components
     initializeTheme();
     initializeSearch(updateClearButtonVisibility);
-    initializePagination();
+    initializeSortSelect();
+    initializeVirtualScroll();
     initializeFilterDropdown();
     initializeBackToTop();
     initializeCopyHandlers();

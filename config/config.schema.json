@@ -29,6 +29,11 @@
       "description": "Path to a custom analytics JavaScript file, relative to the /config folder (e.g., 'analytics.js'). The file contents will be injected into the page.",
       "default": ""
     },
+    "showFoldersNav": {
+      "type": "boolean",
+      "description": "Show the full folder tree in the navigation sidebar. Off by default; the sidebar shows Home and Pinned unless this is enabled (ENV SHOW_FOLDERS_NAV overrides).",
+      "default": false
+    },
     "favorites": {
       "type": "array",
       "description": "List of favorites to display in the sidebar",

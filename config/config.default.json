@@ -4,5 +4,6 @@
   "siteDescription": "Browse and download files from Azure Blob Storage",
   "logoUrl": "",
   "logoFile": "",
+  "showFoldersNav": false,
   "favorites": []
 }
